@@ -24,10 +24,9 @@ export const updateProfile = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const patch: Record<string, unknown> = { ...data, updated_at: new Date().toISOString() };
     const { data: row, error } = await supabase
       .from("profiles")
-      .update(patch)
+      .update({ ...data, updated_at: new Date().toISOString() })
       .eq("id", userId)
       .select()
       .single();

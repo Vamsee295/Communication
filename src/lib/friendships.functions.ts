@@ -2,9 +2,24 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+export type FriendProfile = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+};
+export type FriendshipRow = {
+  id: string;
+  requester_id: string;
+  addressee_id: string;
+  status: "pending" | "accepted" | "blocked";
+  created_at: string;
+  responded_at: string | null;
+};
+
 export const listFriendships = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .handler(async ({ context }): Promise<{ friendships: FriendshipRow[]; profiles: Record<string, FriendProfile> }> => {
     const { supabase, userId } = context;
     const { data: rows, error } = await supabase
       .from("friendships")
@@ -13,10 +28,11 @@ export const listFriendships = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
 
+    const friendships = (rows ?? []) as FriendshipRow[];
     const otherIds = Array.from(
-      new Set((rows ?? []).map((r) => (r.requester_id === userId ? r.addressee_id : r.requester_id))),
+      new Set(friendships.map((r) => (r.requester_id === userId ? r.addressee_id : r.requester_id))),
     );
-    if (otherIds.length === 0) return { friendships: rows ?? [], profiles: {} as Record<string, unknown> };
+    if (otherIds.length === 0) return { friendships, profiles: {} };
 
     const { data: profiles, error: pErr } = await supabase
       .from("profiles")
@@ -24,9 +40,9 @@ export const listFriendships = createServerFn({ method: "GET" })
       .in("id", otherIds);
     if (pErr) throw new Error(pErr.message);
 
-    const map: Record<string, unknown> = {};
-    for (const p of profiles ?? []) map[p.id] = p;
-    return { friendships: rows ?? [], profiles: map };
+    const map: Record<string, FriendProfile> = {};
+    for (const p of profiles ?? []) map[p.id] = p as FriendProfile;
+    return { friendships, profiles: map };
   });
 
 export const sendFriendRequest = createServerFn({ method: "POST" })
