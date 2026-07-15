@@ -79,7 +79,7 @@ function ContactsPage() {
 
   const meId = me.data?.id;
   const all = friends.data?.friendships ?? [];
-  const profiles = (friends.data?.profiles as Record<string, { username?: string; display_name?: string }>) ?? {};
+  const profiles = friends.data?.profiles ?? {};
   const friendedIds = new Set(all.filter((f) => f.status === "accepted" || f.status === "pending").map((f) => f.requester_id === meId ? f.addressee_id : f.requester_id));
 
   const accepted = all.filter((f) => f.status === "accepted");

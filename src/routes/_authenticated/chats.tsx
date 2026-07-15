@@ -88,7 +88,7 @@ function ChatsPage() {
             <ul className="grid gap-2">
               {accepted.map((f) => {
                 const otherId = f.requester_id === profile.data?.id ? f.addressee_id : f.requester_id;
-                const other = (friends.data?.profiles as Record<string, { username?: string; display_name?: string }>)?.[otherId];
+                const other = friends.data?.profiles[otherId];
                 return (
                   <li
                     key={f.id}
