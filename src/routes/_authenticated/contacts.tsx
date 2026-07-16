@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Loader2, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, MessageCircle, Search, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { getMyProfile, searchUsers } from "@/lib/profile.functions";
@@ -12,6 +12,7 @@ import {
   sendFriendRequest,
   removeFriendship,
 } from "@/lib/friendships.functions";
+import { openDirectConversation } from "@/lib/chat.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts")({
   component: ContactsPage,
