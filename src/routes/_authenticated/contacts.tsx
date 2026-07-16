@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Loader2, Search, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Check, Loader2, MessageCircle, Search, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { getMyProfile, searchUsers } from "@/lib/profile.functions";
@@ -12,6 +12,7 @@ import {
   sendFriendRequest,
   removeFriendship,
 } from "@/lib/friendships.functions";
+import { openDirectConversation } from "@/lib/chat.functions";
 
 export const Route = createFileRoute("/_authenticated/contacts")({
   component: ContactsPage,
@@ -22,6 +23,7 @@ type Tab = "friends" | "requests" | "find";
 function ContactsPage() {
   const [tab, setTab] = useState<Tab>("friends");
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const fetchProfile = useServerFn(getMyProfile);
   const fetchFriendships = useServerFn(listFriendships);
@@ -29,6 +31,14 @@ function ContactsPage() {
   const doRespond = useServerFn(respondToFriendRequest);
   const doRemove = useServerFn(removeFriendship);
   const doSearch = useServerFn(searchUsers);
+  const doOpenConv = useServerFn(openDirectConversation);
+
+  const openChat = useMutation({
+    mutationFn: (friend_id: string) => doOpenConv({ data: { friend_id } }),
+    onSuccess: ({ conversation_id }) =>
+      navigate({ to: "/chats/$conversationId", params: { conversationId: conversation_id } }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to open chat"),
+  });
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => fetchProfile() });
   const friends = useQuery({ queryKey: ["friendships"], queryFn: () => fetchFriendships() });
@@ -132,6 +142,13 @@ function ContactsPage() {
                     const other = profiles[otherId];
                     return (
                       <Row key={f.id} name={other?.display_name ?? other?.username ?? "Ghost"} sub={other?.username ? "@" + other.username : ""}>
+                        <button
+                          onClick={() => openChat.mutate(otherId)}
+                          className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground"
+                          aria-label="Message"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => remove.mutate(f.id)}
                           className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive"

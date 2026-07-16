@@ -1,78 +1,101 @@
-# Snapchat-style Messenger — Web MVP Plan
+# Phase 2 — Real-time 1:1 Chat
 
-You confirmed a phased build. This plan covers **Phase 1: Foundation** only. When Phase 1 is working end-to-end, I'll plan Phase 2 (Real-time Chat), then Phase 3 (E2EE), etc. Each phase ships a working app.
+Builds on Phase 1's friends graph. At the end of this phase, two accepted friends can open a chat from the Chats tab and exchange text messages in real time, with typing indicators, delivery/read receipts, presence, and unread badges. No media, no E2EE, no disappearing messages yet — those are Phase 3/4.
 
-## Reality check on the stack
+## Scope
 
-You listed Flutter + NestJS + Prisma + Cloudflare R2 + Socket.IO. Lovable builds **web apps on TanStack Start (React 19 + Vite)** with **Lovable Cloud** (Postgres, Auth, Storage, server functions) as the backend. So the MVP will use:
+1. **Conversations model** — 1:1 conversations derived from `friendships` (accepted only). No group chat yet.
+2. **Messages** — text-only, server-timestamped, ordered, paginated.
+3. **Realtime transport** — Supabase Realtime (Postgres changes + broadcast + presence). Same protocol works from Flutter via `supabase_flutter`.
+4. **Receipts** — per-recipient `delivered_at` / `read_at`.
+5. **Typing indicators** — Realtime broadcast (ephemeral, not stored).
+6. **Presence** — online/last-seen via Realtime presence channel + `profiles.last_seen` fallback.
+7. **Unread counts** — computed per conversation, surfaced on Chats tab and bottom-nav badge.
+8. **UI** — Chats list (last message preview + unread), Chat room (message bubbles, composer, typing dots, receipts, sticky date separators, keyboard-safe layout), presence dot on avatar.
+9. **Frontend-agnostic API** — every operation exposed as a `createServerFn` RPC AND a REST route under `src/routes/api/v1/*` sharing a service layer, so a Flutter client hits identical semantics.
 
-- **Frontend:** TanStack Start, React 19, Tailwind v4, shadcn — Snapchat-inspired PWA (installable on phones).
-- **Backend:** TanStack server functions + server routes (frontend-agnostic HTTP + RPC). Any future Flutter app calls the exact same endpoints.
-- **DB / Auth / Storage:** Lovable Cloud (Postgres + RLS, Auth, Storage buckets — Supabase under the hood).
-- **Realtime (Phase 2):** Supabase Realtime channels (WebSocket). Same protocol works from Flutter via `supabase_flutter`.
-- **E2EE (Phase 3):** `libsignal-client` (WASM) in browser; Flutter uses `libsignal_protocol_dart`. Server only ever sees ciphertext.
+## Database (one migration)
 
-NestJS / Prisma / R2 / Socket.IO aren't part of Lovable — swapping to Cloud gets you an equivalent stack with zero infra work, and the API contract stays portable.
+```text
+conversations
+  id, kind ('direct'), created_at, last_message_at
 
-## Phase 1 scope — Foundation
+conversation_members
+  conversation_id, user_id, joined_at, last_read_at, muted
+  PK (conversation_id, user_id)
 
-Ships a working app where a user can sign up, log in from multiple devices, edit their profile, find other users, send/accept friend requests, and see their contact list. No messaging yet.
+messages
+  id, conversation_id, sender_id, body (text), created_at, edited_at, deleted_at
+  index (conversation_id, created_at desc)
 
-### 1. Enable Lovable Cloud
-Provisions Postgres, Auth, Storage, and secrets automatically.
+message_receipts
+  message_id, user_id, delivered_at, read_at
+  PK (message_id, user_id)
+```
 
-### 2. Database schema (migration)
-- `profiles` — 1:1 with `auth.users` (id FK, username unique, display_name, avatar_url, bio, last_seen, created_at). Trigger auto-creates on signup.
-- `user_roles` + `app_role` enum + `has_role()` SECURITY DEFINER (per platform rules — roles never on profiles).
-- `devices` — id, user_id, device_name, platform (web/ios/android), last_seen_at, revoked_at. Multi-device session tracking.
-- `friendships` — requester_id, addressee_id, status (`pending`/`accepted`/`blocked`), created_at, responded_at. Unique on ordered pair.
-- RLS on everything, scoped to `auth.uid()`. Explicit `GRANT`s per platform rules.
+RLS:
+- `conversations` / `messages` / `receipts`: readable only if `auth.uid()` is a member (via a `SECURITY DEFINER` helper `is_conversation_member(_conv, _user)` to avoid recursive policies).
+- Insert into `messages` only if sender is a member AND the other member is an accepted friend.
+- GRANTs to `authenticated` (+ `service_role`); no `anon`.
+- `ALTER PUBLICATION supabase_realtime ADD TABLE messages, message_receipts, conversation_members;`
+- Trigger: on `messages` insert → update `conversations.last_message_at` and insert `message_receipts` rows for every other member with `delivered_at = null`.
 
-### 3. Authentication (email first)
-- Email + password sign-up / sign-in (phone OTP deferred — needs SMS provider; add in a later phase).
-- Auto-confirm on for MVP so testing doesn't need mailbox round-trips.
-- `_authenticated/` route gate (integration-managed) protects the app shell.
-- Root `onAuthStateChange` invalidates router + query cache on sign-in/out/user-updated.
-- Sign-out hygiene: cancel queries → clear cache → `signOut()` → replace-navigate to `/auth`.
+## Server layer (`src/lib/chat.functions.ts` + `src/routes/api/v1/*`)
 
-### 4. Multi-device sessions
-- On successful sign-in, upsert a row in `devices` with a browser-generated device id (stored in `localStorage`), user-agent-derived name, `platform: 'web'`.
-- Update `last_seen_at` on each app load.
-- Settings → **Devices** page lists all sessions with a "Sign out this device" (sets `revoked_at`; a global sign-out button signs out the browser session too).
+- `openDirectConversation({ friendId })` — returns existing or creates a `direct` conversation between the two users (guarded by accepted friendship).
+- `listConversations()` — my conversations with other-member profile, last message, unread count.
+- `listMessages({ conversationId, before?, limit })` — cursor pagination (created_at, id).
+- `sendMessage({ conversationId, body, clientId })` — `clientId` for optimistic dedupe.
+- `markRead({ conversationId, upToMessageId })` — sets `read_at` on my receipts and bumps `last_read_at`.
+- `editMessage` / `deleteMessage` (soft delete) — sender-only, small time window.
 
-### 5. Profiles
-- `/onboarding` after first sign-in: pick username (unique, validated with zod), display name, optional avatar upload to a `avatars` storage bucket (public).
-- `/settings/profile` to edit later.
+All auth-gated via `requireSupabaseAuth`. REST endpoints under `src/routes/api/v1/conversations/*` and `.../messages/*` reuse the same service functions in `src/server/services/chat.ts`.
 
-### 6. Contacts / Friends
-- `/contacts` — tabbed: **Friends**, **Requests** (incoming + outgoing), **Find people**.
-- Find people: search by username (server function, RLS-safe, returns only public profile fields).
-- Send request → creates `pending` friendship. Accept / decline / block from Requests tab.
-- Accepted friends appear in Friends list; this list is what Phase 2's chat will draw from.
+## Realtime wiring (browser)
 
-### 7. Snapchat-style shell (visual foundation only, no camera yet)
-- Bottom tab bar: **Chats** (placeholder empty state), **Camera** (placeholder), **Stories** (placeholder), **Profile**.
-- Dark theme by default, glassmorphism accents, rounded cards, subtle spring animations (`motion/react`). Camera-first swipe gestures land in Phase 6 polish.
-- PWA manifest so it installs to a phone home screen.
+Per open chat room, one Supabase channel:
+- `postgres_changes` on `messages` filtered by `conversation_id` → append to cache.
+- `postgres_changes` on `message_receipts` filtered by my membership → update receipt state.
+- `broadcast` event `typing` (throttled to 1/sec, auto-expires after 3s).
+- `presence` track `{ user_id }` for online dot in the room header.
 
-### 8. Backend architecture (frontend-agnostic from day 1)
-- All data access goes through **server functions** in `src/lib/*.functions.ts` with zod `inputValidator` + `requireSupabaseAuth` middleware. These are typed RPC for the web app.
-- The same operations are also exposed as **REST endpoints under `src/routes/api/v1/*`** (JSON in/out, bearer-token auth via Supabase JWT), so a future Flutter client hits identical semantics — no rewrites. Both call the same underlying service layer in `src/server/services/*.ts`.
-- Zod schemas live in `src/shared/schemas/*` and are reused by RPC, REST, and the client.
+One global channel on app mount:
+- `postgres_changes` on `messages` (any conversation I'm a member of, filtered client-side by membership set) → invalidate `["conversations"]` and bump unread.
+- Global `presence` channel for friends list.
 
-## Design direction
+Teardown on unmount (`supabase.removeChannel`) — no leaking subscriptions.
 
-Snapchat-inspired isn't a single look — I'd like to lock the vibe before building the shell. After you approve this plan I'll generate 3 rendered design directions (dark glassmorphism, high-contrast neo-brutalist, soft neon gradient — or your call) for the auth + chats-shell + profile surfaces, and you pick one.
+## UI
 
-## What's NOT in Phase 1 (comes later, don't worry)
-- Any messaging, realtime, typing, presence → Phase 2
-- E2EE, Signal Protocol, key exchange → Phase 3
-- Media upload, encrypted blobs, view-once → Phase 4
-- Disappearing messages, block/report → Phase 5
-- Camera, stories, URL previews, push notifications, search → Phase 6
-- Phone OTP, voice/video calls, AI features → future phases
+- **`/chats`** — replaces the current empty state with a real conversation list: avatar (with presence dot), name, last message preview, timestamp, unread pill. Tap → `/chats/$conversationId`.
+- **`/chats/$conversationId`** — sticky header (avatar, name, presence, back), virtualized message list (reverse-infinite scroll), date separators, own vs other bubbles, tail grouping, receipt ticks (sent → delivered → read), typing dots row, composer (autosize textarea, send button, Enter-to-send / Shift+Enter newline), keyboard-safe padding for iOS PWA.
+- **Chats tab badge** — total unread across conversations, shown on the bottom-nav Chats icon.
+- **From `/contacts`** — "Message" button on accepted friend → `openDirectConversation` → navigate to the room.
 
-## Deliverable at end of Phase 1
-A deployable PWA where two testers can sign up, add each other as friends, and see each other in their contacts list from multiple devices — with a clean API surface a Flutter app could adopt unchanged.
+Motion: message enter (spring), typing dots (staggered), send-button pulse — kept subtle, matches Phase 1 glassmorphism.
 
-Approve to build Phase 1, or tell me what to adjust (e.g. skip PWA, phone OTP first, different design vibe).
+## State & caching (TanStack Query)
+
+- Query keys: `["conversations"]`, `["messages", conversationId]`, `["presence", conversationId]`.
+- `sendMessage` uses optimistic update keyed by `clientId`; realtime insert reconciles.
+- `markRead` fires on room mount + on scroll-to-bottom; debounced.
+- Loader on `/chats/$conversationId` prefetches first page + conversation meta.
+
+## Technical details
+
+- Cursor pagination uses `(created_at, id)` composite to avoid dup/skip at page boundaries.
+- Message ordering is by server `created_at`; client sorts defensively.
+- Typing broadcast payload: `{ user_id, at }`; consumer keeps a `Map<userId, timeoutId>`.
+- Presence: single join per channel; `last_seen` in `profiles` updated on join/leave via `onLeave` handler calling a server fn (throttled).
+- Receipts trigger runs `SECURITY DEFINER` to bypass RLS during fanout.
+- Realtime channel names namespaced: `chat:conv:{id}`, `chat:global:{userId}`.
+- Rate limits (server-side): max 20 messages / 10s per user, max 4KB body.
+- Zod schemas in `src/shared/schemas/chat.ts` shared by RPC + REST + client forms.
+
+## What's still NOT in Phase 2
+
+Media/attachments, view-once, E2EE, disappearing messages, group chats, message search, push notifications, voice notes, reactions, replies/threads — all later phases.
+
+## Deliverable
+
+Two Phase-1 friends can open a chat from either Chats or Contacts, exchange messages in real time across tabs/devices, see typing + presence + read receipts, and unread counts stay accurate — with the same REST surface a Flutter client can adopt unchanged.
