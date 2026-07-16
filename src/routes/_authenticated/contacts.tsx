@@ -23,6 +23,7 @@ type Tab = "friends" | "requests" | "find";
 function ContactsPage() {
   const [tab, setTab] = useState<Tab>("friends");
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const fetchProfile = useServerFn(getMyProfile);
   const fetchFriendships = useServerFn(listFriendships);
@@ -30,6 +31,14 @@ function ContactsPage() {
   const doRespond = useServerFn(respondToFriendRequest);
   const doRemove = useServerFn(removeFriendship);
   const doSearch = useServerFn(searchUsers);
+  const doOpenConv = useServerFn(openDirectConversation);
+
+  const openChat = useMutation({
+    mutationFn: (friend_id: string) => doOpenConv({ data: { friend_id } }),
+    onSuccess: ({ conversation_id }) =>
+      navigate({ to: "/chats/$conversationId", params: { conversationId: conversation_id } }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Failed to open chat"),
+  });
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => fetchProfile() });
   const friends = useQuery({ queryKey: ["friendships"], queryFn: () => fetchFriendships() });
