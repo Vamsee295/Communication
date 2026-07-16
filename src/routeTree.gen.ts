@@ -19,6 +19,7 @@ import { Route as AuthenticatedDevicesRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
 import { Route as AuthenticatedChatsRouteImport } from './routes/_authenticated/chats'
 import { Route as AuthenticatedCameraRouteImport } from './routes/_authenticated/camera'
+import { Route as AuthenticatedChatsConversationIdRouteImport } from './routes/_authenticated/chats.$conversationId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -69,28 +70,36 @@ const AuthenticatedCameraRoute = AuthenticatedCameraRouteImport.update({
   path: '/camera',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedChatsConversationIdRoute =
+  AuthenticatedChatsConversationIdRouteImport.update({
+    id: '/$conversationId',
+    path: '/$conversationId',
+    getParentRoute: () => AuthenticatedChatsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/camera': typeof AuthenticatedCameraRoute
-  '/chats': typeof AuthenticatedChatsRoute
+  '/chats': typeof AuthenticatedChatsRouteWithChildren
   '/contacts': typeof AuthenticatedContactsRoute
   '/devices': typeof AuthenticatedDevicesRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/stories': typeof AuthenticatedStoriesRoute
+  '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/camera': typeof AuthenticatedCameraRoute
-  '/chats': typeof AuthenticatedChatsRoute
+  '/chats': typeof AuthenticatedChatsRouteWithChildren
   '/contacts': typeof AuthenticatedContactsRoute
   '/devices': typeof AuthenticatedDevicesRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/stories': typeof AuthenticatedStoriesRoute
+  '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,12 +107,13 @@ export interface FileRoutesById {
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
   '/_authenticated/camera': typeof AuthenticatedCameraRoute
-  '/_authenticated/chats': typeof AuthenticatedChatsRoute
+  '/_authenticated/chats': typeof AuthenticatedChatsRouteWithChildren
   '/_authenticated/contacts': typeof AuthenticatedContactsRoute
   '/_authenticated/devices': typeof AuthenticatedDevicesRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/stories': typeof AuthenticatedStoriesRoute
+  '/_authenticated/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/profile'
     | '/stories'
+    | '/chats/$conversationId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/profile'
     | '/stories'
+    | '/chats/$conversationId'
   id:
     | '__root__'
     | '/'
@@ -140,6 +152,7 @@ export interface FileRouteTypes {
     | '/_authenticated/onboarding'
     | '/_authenticated/profile'
     | '/_authenticated/stories'
+    | '/_authenticated/chats/$conversationId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -220,12 +233,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCameraRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/chats/$conversationId': {
+      id: '/_authenticated/chats/$conversationId'
+      path: '/$conversationId'
+      fullPath: '/chats/$conversationId'
+      preLoaderRoute: typeof AuthenticatedChatsConversationIdRouteImport
+      parentRoute: typeof AuthenticatedChatsRoute
+    }
   }
 }
 
+interface AuthenticatedChatsRouteChildren {
+  AuthenticatedChatsConversationIdRoute: typeof AuthenticatedChatsConversationIdRoute
+}
+
+const AuthenticatedChatsRouteChildren: AuthenticatedChatsRouteChildren = {
+  AuthenticatedChatsConversationIdRoute: AuthenticatedChatsConversationIdRoute,
+}
+
+const AuthenticatedChatsRouteWithChildren =
+  AuthenticatedChatsRoute._addFileChildren(AuthenticatedChatsRouteChildren)
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedCameraRoute: typeof AuthenticatedCameraRoute
-  AuthenticatedChatsRoute: typeof AuthenticatedChatsRoute
+  AuthenticatedChatsRoute: typeof AuthenticatedChatsRouteWithChildren
   AuthenticatedContactsRoute: typeof AuthenticatedContactsRoute
   AuthenticatedDevicesRoute: typeof AuthenticatedDevicesRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
@@ -235,7 +266,7 @@ interface AuthenticatedRouteRouteChildren {
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCameraRoute: AuthenticatedCameraRoute,
-  AuthenticatedChatsRoute: AuthenticatedChatsRoute,
+  AuthenticatedChatsRoute: AuthenticatedChatsRouteWithChildren,
   AuthenticatedContactsRoute: AuthenticatedContactsRoute,
   AuthenticatedDevicesRoute: AuthenticatedDevicesRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
