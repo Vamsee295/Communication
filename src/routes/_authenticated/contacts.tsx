@@ -143,6 +143,13 @@ function ContactsPage() {
                     return (
                       <Row key={f.id} name={other?.display_name ?? other?.username ?? "Ghost"} sub={other?.username ? "@" + other.username : ""}>
                         <button
+                          onClick={() => openChat.mutate(otherId)}
+                          className="grid h-9 w-9 place-items-center rounded-full bg-primary text-primary-foreground"
+                          aria-label="Message"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                        </button>
+                        <button
                           onClick={() => remove.mutate(f.id)}
                           className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive"
                         >
