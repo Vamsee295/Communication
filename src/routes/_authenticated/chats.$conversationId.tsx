@@ -352,6 +352,3 @@ function Dot({ delay }: { delay: string }) {
     />
   );
 }
-
-// Silence unused import warning when linting picks up Link
-export const _typing = Link;
