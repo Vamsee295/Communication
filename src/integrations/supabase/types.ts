@@ -271,6 +271,7 @@ export type Database = {
         Args: { _conv: string; _user: string }
         Returns: boolean
       }
+      open_direct_conversation: { Args: { _friend: string }; Returns: string }
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
