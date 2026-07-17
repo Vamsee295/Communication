@@ -10,7 +10,7 @@ import { listConversations } from "@/lib/chat.functions";
 import { getDeviceKey, guessDeviceName } from "@/lib/device-key";
 import { supabase } from "@/integrations/supabase/client";
 
-export const Route = createFileRoute("/_authenticated/chats")({
+export const Route = createFileRoute("/_authenticated/chats/")({
   component: ChatsPage,
 });
 
