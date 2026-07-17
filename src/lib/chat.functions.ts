@@ -170,7 +170,7 @@ export const listMessages = createServerFn({ method: "GET" })
       .parse(data),
   )
   .handler(async ({ data, context }): Promise<MessageRow[]> => {
-    const { supabase } = context;
+    const { supabase, userId } = context;
     let q = supabase
       .from("messages")
       .select("*")
@@ -180,7 +180,50 @@ export const listMessages = createServerFn({ method: "GET" })
     if (data.before) q = q.lt("created_at", data.before);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
-    return (rows ?? []) as MessageRow[];
+
+    // Filter out messages the current user hid ("Delete for Me")
+    const ids = (rows ?? []).map((r) => r.id);
+    if (ids.length === 0) return [];
+    const { data: hidden } = await supabase
+      .from("message_hidden")
+      .select("message_id")
+      .eq("user_id", userId)
+      .in("message_id", ids);
+    const hiddenSet = new Set((hidden ?? []).map((h) => h.message_id));
+    return (rows as MessageRow[]).filter((m) => !hiddenSet.has(m.id));
+  });
+
+/** Hide a message from just my own view ("Delete for Me"), synced across my devices. */
+export const hideMessageForMe = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ message_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("message_hidden")
+      .insert({ message_id: data.message_id, user_id: userId });
+    if (error && error.code !== "23505") throw new Error(error.message);
+    return { ok: true };
+  });
+
+/** Permanently delete a message for everyone. Only the original sender may do this. */
+export const deleteMessageForEveryone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ message_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    // RLS enforces sender_id = auth.uid(); explicit check for a clean error
+    const { data: msg, error: mErr } = await supabase
+      .from("messages")
+      .select("id, sender_id")
+      .eq("id", data.message_id)
+      .maybeSingle();
+    if (mErr) throw new Error(mErr.message);
+    if (!msg) throw new Error("Message not found");
+    if (msg.sender_id !== userId) throw new Error("Only the sender can delete for everyone");
+    const { error } = await supabase.from("messages").delete().eq("id", data.message_id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 /** Send a message. `client_id` allows optimistic dedupe. */
