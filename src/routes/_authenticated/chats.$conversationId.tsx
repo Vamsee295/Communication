@@ -77,12 +77,16 @@ function ChatRoom() {
     return map;
   }, [receipts.data]);
 
-  // Realtime: messages + receipts + typing broadcast + presence
+  // Realtime: single channel for messages + receipts + typing broadcast + presence
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [channelReady, setChannelReady] = useState(false);
+
   useEffect(() => {
     if (!meId) return;
+    setChannelReady(false);
     const channel = supabase
       .channel(`chat:conv:${conversationId}`, {
-        config: { presence: { key: meId } },
+        config: { presence: { key: meId }, broadcast: { self: false } },
       })
       .on(
         "postgres_changes",
@@ -100,29 +104,41 @@ function ChatRoom() {
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "UPDATE",
           schema: "public",
-          table: "message_receipts",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
         },
+        () => {
+          qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_receipts" },
         () => {
           qc.invalidateQueries({ queryKey: ["receipts", conversationId] });
         },
       )
       .on("broadcast", { event: "typing" }, (payload) => {
         const uid = (payload.payload as { user_id?: string })?.user_id;
-        if (uid && uid !== meId) {
-          setTypingOther(Date.now());
-        }
+        if (uid && uid !== meId) setTypingOther(Date.now());
       })
       .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState() as Record<string, unknown>;
-        setPresentIds(new Set(Object.keys(state)));
+        setPresentIds(new Set(Object.keys(state).filter((k) => k !== meId)));
       })
       .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") await channel.track({ user_id: meId });
+        if (status === "SUBSCRIBED") {
+          await channel.track({ user_id: meId, at: Date.now() });
+          setChannelReady(true);
+        }
       });
 
+    channelRef.current = channel;
     return () => {
+      channelRef.current = null;
+      setChannelReady(false);
       supabase.removeChannel(channel);
     };
   }, [conversationId, meId, qc]);
@@ -169,7 +185,6 @@ function ChatRoom() {
       setOptimistic((prev) => [...prev, pending]);
       try {
         const row = await doSend({ data: { conversation_id: conversationId, body, client_id } });
-        // Remove optimistic once server row arrives via realtime; also invalidate now
         qc.invalidateQueries({ queryKey: ["messages", conversationId] });
         setOptimistic((prev) => prev.filter((m) => m.client_id !== client_id));
         return row;
@@ -182,26 +197,15 @@ function ChatRoom() {
     },
   });
 
-  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  useEffect(() => {
-    typingChannelRef.current = supabase.channel(`chat:conv:${conversationId}`);
-    return () => {
-      if (typingChannelRef.current) supabase.removeChannel(typingChannelRef.current);
-    };
-    // Reuse channel: send broadcast through same name — Supabase dedupes
-  }, [conversationId]);
-
   const lastTypingAt = useRef(0);
   const notifyTyping = useCallback(() => {
+    const ch = channelRef.current;
+    if (!ch || !channelReady || !meId) return;
     const now = Date.now();
     if (now - lastTypingAt.current < 1500) return;
     lastTypingAt.current = now;
-    supabase.channel(`chat:conv:${conversationId}`).send({
-      type: "broadcast",
-      event: "typing",
-      payload: { user_id: meId },
-    });
-  }, [conversationId, meId]);
+    ch.send({ type: "broadcast", event: "typing", payload: { user_id: meId } });
+  }, [channelReady, meId]);
 
   const [text, setText] = useState("");
   const submit = () => {
