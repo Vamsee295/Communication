@@ -1,12 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Users } from "lucide-react";
+import { UserPlus, Users, Search, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { registerDevice } from "@/lib/devices.functions";
 import { getMyProfile } from "@/lib/profile.functions";
-import { listConversations } from "@/lib/chat.functions";
+import { listConversations, searchMessagesGlobal } from "@/lib/chat.functions";
 import { getDeviceKey, guessDeviceName } from "@/lib/device-key";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -66,7 +66,25 @@ function ChatsPage() {
     };
   }, [profile.data?.id, qc]);
 
+  const [q, setQ] = useState("");
+  const trimmed = q.trim();
   const items = conversations.data ?? [];
+  const filtered = useMemo(() => {
+    if (!trimmed) return items;
+    const needle = trimmed.toLowerCase();
+    return items.filter((c) => {
+      const n = (c.other?.display_name ?? "").toLowerCase();
+      const u = (c.other?.username ?? "").toLowerCase();
+      return n.includes(needle) || u.includes(needle);
+    });
+  }, [items, trimmed]);
+
+  const fetchGlobalSearch = useServerFn(searchMessagesGlobal);
+  const globalHits = useQuery({
+    queryKey: ["global-search", trimmed],
+    queryFn: () => fetchGlobalSearch({ data: { q: trimmed } }),
+    enabled: trimmed.length >= 2,
+  });
 
   return (
     <AppShell>
@@ -85,12 +103,27 @@ function ChatsPage() {
           </Link>
         </header>
 
-        <div className="mt-8">
-          {items.length === 0 ? (
+        <div className="mt-5 flex items-center gap-2 glass rounded-full px-4 py-2.5">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search chats and messages"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {q && (
+            <button onClick={() => setQ("")} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10" aria-label="Clear">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="mt-6">
+          {filtered.length === 0 && !trimmed ? (
             <EmptyState />
           ) : (
             <ul className="grid gap-2">
-              {items.map((c) => {
+              {filtered.map((c) => {
                 const name = c.other?.display_name ?? c.other?.username ?? "Ghost";
                 const last = c.last_message;
                 const preview = last
@@ -135,6 +168,43 @@ function ChatsPage() {
                 );
               })}
             </ul>
+          )}
+
+          {trimmed.length >= 2 && (globalHits.data ?? []).length > 0 && (
+            <div className="mt-6">
+              <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Messages
+              </p>
+              <ul className="grid gap-1.5">
+                {(globalHits.data ?? []).map((h) => {
+                  const name = h.other?.display_name ?? h.other?.username ?? "Ghost";
+                  return (
+                    <li key={h.message.id}>
+                      <button
+                        onClick={() =>
+                          navigate({
+                            to: "/chats/$conversationId",
+                            params: { conversationId: h.conversation_id },
+                          })
+                        }
+                        className="glass w-full rounded-2xl px-4 py-3 text-left hover:bg-white/10"
+                      >
+                        <div className="flex items-baseline justify-between">
+                          <p className="text-xs font-semibold">{name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(h.message.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{h.message.body}</p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {trimmed.length >= 2 && globalHits.isSuccess && (globalHits.data ?? []).length === 0 && filtered.length === 0 && (
+            <p className="mt-8 text-center text-sm text-muted-foreground">No matches for "{trimmed}"</p>
           )}
         </div>
       </div>

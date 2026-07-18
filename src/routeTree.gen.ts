@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedStoriesRouteImport } from './routes/_authenticated/stories'
+import { Route as AuthenticatedStarredRouteImport } from './routes/_authenticated/starred'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedDevicesRouteImport } from './routes/_authenticated/devices'
@@ -38,6 +39,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedStoriesRoute = AuthenticatedStoriesRouteImport.update({
   id: '/stories',
   path: '/stories',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedStarredRoute = AuthenticatedStarredRouteImport.update({
+  id: '/starred',
+  path: '/starred',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/devices': typeof AuthenticatedDevicesRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/starred': typeof AuthenticatedStarredRoute
   '/stories': typeof AuthenticatedStoriesRoute
   '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   '/devices': typeof AuthenticatedDevicesRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/starred': typeof AuthenticatedStarredRoute
   '/stories': typeof AuthenticatedStoriesRoute
   '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   '/_authenticated/devices': typeof AuthenticatedDevicesRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/starred': typeof AuthenticatedStarredRoute
   '/_authenticated/stories': typeof AuthenticatedStoriesRoute
   '/_authenticated/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/onboarding'
     | '/profile'
+    | '/starred'
     | '/stories'
     | '/chats/$conversationId'
     | '/chats/'
@@ -137,6 +147,7 @@ export interface FileRouteTypes {
     | '/devices'
     | '/onboarding'
     | '/profile'
+    | '/starred'
     | '/stories'
     | '/chats/$conversationId'
     | '/chats'
@@ -150,6 +161,7 @@ export interface FileRouteTypes {
     | '/_authenticated/devices'
     | '/_authenticated/onboarding'
     | '/_authenticated/profile'
+    | '/_authenticated/starred'
     | '/_authenticated/stories'
     | '/_authenticated/chats/$conversationId'
     | '/_authenticated/chats/'
@@ -189,6 +201,13 @@ declare module '@tanstack/react-router' {
       path: '/stories'
       fullPath: '/stories'
       preLoaderRoute: typeof AuthenticatedStoriesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/starred': {
+      id: '/_authenticated/starred'
+      path: '/starred'
+      fullPath: '/starred'
+      preLoaderRoute: typeof AuthenticatedStarredRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/profile': {
@@ -249,6 +268,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDevicesRoute: typeof AuthenticatedDevicesRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedStarredRoute: typeof AuthenticatedStarredRoute
   AuthenticatedStoriesRoute: typeof AuthenticatedStoriesRoute
   AuthenticatedChatsConversationIdRoute: typeof AuthenticatedChatsConversationIdRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
@@ -260,6 +280,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDevicesRoute: AuthenticatedDevicesRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedStarredRoute: AuthenticatedStarredRoute,
   AuthenticatedStoriesRoute: AuthenticatedStoriesRoute,
   AuthenticatedChatsConversationIdRoute: AuthenticatedChatsConversationIdRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
