@@ -66,7 +66,25 @@ function ChatsPage() {
     };
   }, [profile.data?.id, qc]);
 
+  const [q, setQ] = useState("");
+  const trimmed = q.trim();
   const items = conversations.data ?? [];
+  const filtered = useMemo(() => {
+    if (!trimmed) return items;
+    const needle = trimmed.toLowerCase();
+    return items.filter((c) => {
+      const n = (c.other?.display_name ?? "").toLowerCase();
+      const u = (c.other?.username ?? "").toLowerCase();
+      return n.includes(needle) || u.includes(needle);
+    });
+  }, [items, trimmed]);
+
+  const fetchGlobalSearch = useServerFn(searchMessagesGlobal);
+  const globalHits = useQuery({
+    queryKey: ["global-search", trimmed],
+    queryFn: () => fetchGlobalSearch({ data: { q: trimmed } }),
+    enabled: trimmed.length >= 2,
+  });
 
   return (
     <AppShell>
@@ -85,12 +103,27 @@ function ChatsPage() {
           </Link>
         </header>
 
-        <div className="mt-8">
-          {items.length === 0 ? (
+        <div className="mt-5 flex items-center gap-2 glass rounded-full px-4 py-2.5">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search chats and messages"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+          {q && (
+            <button onClick={() => setQ("")} className="grid h-6 w-6 place-items-center rounded-full hover:bg-white/10" aria-label="Clear">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="mt-6">
+          {filtered.length === 0 && !trimmed ? (
             <EmptyState />
           ) : (
             <ul className="grid gap-2">
-              {items.map((c) => {
+              {filtered.map((c) => {
                 const name = c.other?.display_name ?? c.other?.username ?? "Ghost";
                 const last = c.last_message;
                 const preview = last
