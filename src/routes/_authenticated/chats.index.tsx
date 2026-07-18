@@ -1,12 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Users } from "lucide-react";
+import { UserPlus, Users, Search, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { registerDevice } from "@/lib/devices.functions";
 import { getMyProfile } from "@/lib/profile.functions";
-import { listConversations } from "@/lib/chat.functions";
+import { listConversations, searchMessagesGlobal } from "@/lib/chat.functions";
 import { getDeviceKey, guessDeviceName } from "@/lib/device-key";
 import { supabase } from "@/integrations/supabase/client";
 
