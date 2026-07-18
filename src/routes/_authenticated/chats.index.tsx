@@ -169,6 +169,43 @@ function ChatsPage() {
               })}
             </ul>
           )}
+
+          {trimmed.length >= 2 && (globalHits.data ?? []).length > 0 && (
+            <div className="mt-6">
+              <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Messages
+              </p>
+              <ul className="grid gap-1.5">
+                {(globalHits.data ?? []).map((h) => {
+                  const name = h.other?.display_name ?? h.other?.username ?? "Ghost";
+                  return (
+                    <li key={h.message.id}>
+                      <button
+                        onClick={() =>
+                          navigate({
+                            to: "/chats/$conversationId",
+                            params: { conversationId: h.conversation_id },
+                          })
+                        }
+                        className="glass w-full rounded-2xl px-4 py-3 text-left hover:bg-white/10"
+                      >
+                        <div className="flex items-baseline justify-between">
+                          <p className="text-xs font-semibold">{name}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(h.message.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{h.message.body}</p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {trimmed.length >= 2 && globalHits.isSuccess && (globalHits.data ?? []).length === 0 && filtered.length === 0 && (
+            <p className="mt-8 text-center text-sm text-muted-foreground">No matches for "{trimmed}"</p>
+          )}
         </div>
       </div>
     </AppShell>
