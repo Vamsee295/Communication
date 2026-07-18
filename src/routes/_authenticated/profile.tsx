@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, Save, Smartphone } from "lucide-react";
+import { LogOut, Save, Smartphone, Star } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { getMyProfile, updateProfile } from "@/lib/profile.functions";
@@ -98,6 +98,16 @@ function ProfilePage() {
         </div>
 
         <div className="mt-8 grid gap-2">
+          <Link
+            to="/starred"
+            className="glass flex items-center gap-3 rounded-2xl px-4 py-4"
+          >
+            <Star className="h-5 w-5 text-primary" />
+            <div className="flex-1">
+              <p className="font-semibold">Starred messages</p>
+              <p className="text-xs text-muted-foreground">Your saved favorites</p>
+            </div>
+          </Link>
           <Link
             to="/devices"
             className="glass flex items-center gap-3 rounded-2xl px-4 py-4"
