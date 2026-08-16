@@ -1,64 +1,66 @@
-## Phase 3 — Complete 1:1 Messaging
+# Ghostline — UI Completion + Real WebRTC Calling
 
-Build the full messaging experience on top of the existing chat foundation. Nothing is encrypted yet — E2EE is Phase 5 per your roadmap.
+Two stages. Stage A finishes the "must do" UI list and the navigation/settings architecture. Stage B builds real 1:1 voice and video calling on top of the existing realtime infrastructure. No fake call UI, no simulated timers.
 
-### Scope (in order)
+One note first: the floating bar at the bottom of the screen with the sparkle / T / pencil / square icons is not part of Ghostline — it is the Lovable preview's own editing toolbar and it never appears in the published app. Nothing to remove in code.
 
-1. **Emoji reactions** — tap/long-press a bubble → emoji picker (quick set + full picker). One reaction per emoji per user. Reactions render under the bubble with counts; tap to toggle.
-2. **Reply** — swipe-right or menu → composer shows a quoted preview. Sent message renders the quoted parent inline and tapping it scrolls to the original.
-3. **Edit** — sender-only, menu → composer enters edit mode. Server stamps `edited_at`; bubble shows "edited" label. Edit history retained server-side.
-4. **Forward** — menu → sheet listing conversations → send copies with a "Forwarded" tag.
-5. **Message info** — menu → sheet with Sent / Delivered / Read timestamps (reuse `message_receipts`).
-6. **Search** — search bar in chat list (across conversations) and inside a chat (jump-to-match with highlight).
-7. **Pin messages** — per-conversation pins (max 3, like WhatsApp). Pinned bar at top of chat, tap to jump.
-8. **Star messages** — personal favorites. New "Starred" screen accessible from Profile.
-9. **Multi-select** — long-press enters selection mode → forward / delete / star / copy in bulk.
+## Stage A — Finish the messaging UI
 
-### Data model
+### 1. Conversation header (already partly there, gets a proper identity block)
+Avatar, display name, then a status line: `@username · Active now` / `Last seen 5m ago` (derived from presence plus the existing `last_seen` field). Right side: search, voice call, video call, overflow menu. Below the name, a small `End-to-end encrypted` lock chip; clicking it opens a short sheet explaining that only the two participants can read the messages.
 
-New tables (all with RLS + GRANTs, realtime on where noted):
+### 2. Chat list upgrades
+- Unread count as a small yellow circular badge (the count already comes from the server).
+- Last message preview line with sender tick state.
+- Green dot on the avatar for online contacts, muted/pinned icons on the row.
+- Hover reveals a `⋮` menu: Mark as unread, Pin, Mute, Archive, Delete, Block. Destructive items get a confirm dialog.
+- `PINNED` and `RECENT` section headers when any chat is pinned.
 
-- `message_reactions(message_id, user_id, emoji)` — unique per triple. **Realtime.**
-- `message_edits(id, message_id, previous_body, edited_at)` — append-only history.
-- `pinned_messages(conversation_id, message_id, pinned_by, pinned_at)` — max 3 enforced by trigger. **Realtime.**
-- `starred_messages(user_id, message_id, starred_at)` — personal.
+### 3. Navigation restructure
+Sidebar becomes **Chats · Calls · Profile**. Stories and Camera are removed from primary navigation (Camera/media moves inside the chat composer later). Each screen gets its own layout rather than reusing the chats template: chats = list + conversation two-pane, profile = centered, settings = settings nav, calls = history list.
 
-Column additions to `messages`:
-- `reply_to_id uuid` — nullable FK to messages.id
-- `forwarded_from_id uuid` — nullable FK (nulled on original delete)
-- `edited_at timestamptz` — already implied; ensure column exists
+### 4. Profile → Settings
+Profile becomes a centered card (avatar, name, @username) leading into a settings list: Account, Privacy & Security, Notifications, Appearance, Devices, Blocked Users, About Ghostline, then Log out. Privacy & Security gets real controls where the data already supports it (read receipts, last-seen visibility, blocked list, devices); anything not backed by real behaviour is not shown.
 
-### Server functions (`src/lib/chat.functions.ts` + new modules)
+### 5. Composer + motion polish
+Composer gets attachment / emoji / voice affordances in one row with the send button, reply and edit modes inline. Message list gets a small staggered entry, send animation, animated typing dots, and a subtle 3–4s breathing glow on the empty-state ghost mark.
 
-- `toggleReaction({ message_id, emoji })`
-- `editMessage({ message_id, body })` — writes to `message_edits`, updates `messages.body` + `edited_at`
-- `forwardMessages({ message_ids, conversation_ids })`
-- `getMessageInfo({ message_id })` — receipts breakdown
-- `searchMessages({ q, conversation_id? })`
-- `pinMessage / unpinMessage / listPinned`
-- `starMessage / unstarMessage / listStarred`
-- Extend `sendMessage` to accept `reply_to_id` and `forwarded_from_id`
+### 6. Keyboard shortcuts + Ctrl/Cmd+K search
+Global palette with sections (Chats, Messages, People) and recent searches. Shortcuts: `Ctrl+K` search, `Ctrl+N` new chat, `Esc` close, `Enter` send, `Shift+Enter` newline, `Ctrl+,` settings.
 
-### UI
+## Stage B — Real WebRTC voice & video calls
 
-- **Bubble** — refactor into a component with reactions row, quoted-reply header, "edited"/"forwarded" tags, and a context menu (right-click on web, long-press on touch).
-- **Composer** — new modes: reply (quoted preview above input), edit (yellow chrome + save/cancel).
-- **Chat room** — pinned bar (collapsible), inline search overlay with match navigation, selection mode top bar.
-- **Chat list** — search input filtering conversations + matching messages.
-- **Profile** — link to `/starred`.
+### Signaling
+Uses the existing Supabase Realtime infrastructure — no new backend. A per-user private channel carries `call-offer`, `call-answer`, `ice-candidate`, `call-accept`, `call-decline`, `call-end`. Media never touches the database; only SDP/ICE metadata passes through signaling, and only between users who are already accepted friends.
 
-### Not in this phase
+### Data
+New `calls` table: caller, callee, conversation, type (voice/video), status (ringing/accepted/declined/missed/ended/failed), started/ended timestamps, duration. Owner-scoped access so only the two participants can read a call row. Completed and missed calls also render as a distinct system-style event in the conversation timeline (not a normal bubble).
 
-- E2EE (Phase 5)
-- Media/voice/files (Phase 4)
-- Groups
-- Disappearing/view-once/hidden chats
+### Call flow
+Caller requests mic/camera, creates the peer connection and offer, sends it through signaling, exchanges ICE. Receiver gets a **global** incoming-call dialog (works on any page, not only inside the conversation), with caller name, avatar, call type, Accept / Decline. Explicit state machine: IDLE, OUTGOING, RINGING, CONNECTING, CONNECTED, RECONNECTING, DECLINED, MISSED, ENDED, FAILED — the UI text follows the state ("Calling Sanjith…", "Reconnecting…", "00:42").
 
-### Technical notes
+### Call UI
+- Voice: large avatar, name, status, duration, Mute / Speaker / End.
+- Video: remote video fills the view, local camera as a floating picture-in-picture, Mute / End / Camera, switch camera where supported.
+- End-call button visually distinct; controls touch-sized on mobile with safe-area padding.
 
-- Backend stays API-first: every action is a `createServerFn` returning plain DTOs, so a future Flutter client hits the same contract.
-- Realtime: extend the existing chat channel with subscriptions for `message_reactions` and `pinned_messages` INSERT/DELETE.
-- Search uses Postgres `ILIKE` for now (fast enough at MVP scale). Full-text (`tsvector`) can be added later without changing the API shape.
-- Reactions/pins/edits/stars all respect existing RLS via `is_conversation_member`.
+### Reliability
+STUN configured through `VITE_STUN_SERVER_URL`, with TURN slots (`VITE_TURN_URL`, plus credentials) so TURN can be enabled without rewriting anything. Nothing hard-coded. Outgoing calls time out and are recorded as missed. On end: peer connection closed, all local tracks stopped, remote streams cleared, signaling listeners removed, ICE buffer flushed — so the browser mic/camera indicator disappears. Permission denials show a clear message with retry instead of crashing.
 
-I'll ship this as one integrated phase, verifying with Playwright at the end. Approve and I'll start with the migration.
+### Calls page
+Real call history from the `calls` table: contact, avatar, incoming/outgoing/missed, voice/video icon, timestamp, duration, search, and quick call-back actions.
+
+## Technical notes
+
+- Calling lives in modular pieces following existing conventions: a call context/provider mounted at the root, a WebRTC service, a signaling service built on the existing Supabase channel setup, and separate components for incoming, outgoing, active voice, active video, controls, and history.
+- Server functions for call lifecycle (create, accept, decline, end) go in a new `src/lib/calls.functions.ts` using the existing authenticated middleware; authorization checks that the caller is a participant and the two users are friends.
+- Chat actions (pin/mute/archive/mark unread) extend `conversation_members` (`muted` already exists); block extends the existing friendship model.
+- Existing auth, messaging, deletion, reactions, pins, stars, search, devices, and routing stay intact.
+- No new third-party calling platform.
+
+## Order of work
+
+1. Conversation header, unread badges, online/last-seen, chat hover actions, composer, encryption indicator.
+2. Navigation restructure + Profile/Settings.
+3. Calls: schema, signaling, WebRTC, incoming/active UI, history page, timeline events.
+4. Pinned chats, Ctrl+K palette, keyboard shortcuts, empty-state animation, final QA pass.
