@@ -48,7 +48,11 @@ export type ConversationSummary = {
   other: ChatProfile | null;
   last_message: Pick<MessageRow, "id" | "sender_id" | "body" | "created_at" | "deleted_at"> | null;
   unread: number;
+  pinned: boolean;
+  muted: boolean;
+  archived: boolean;
 };
+
 
 /* ============================ CONVERSATIONS ============================ */
 
