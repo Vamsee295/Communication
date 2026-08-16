@@ -14,26 +14,82 @@ export type Database = {
   }
   public: {
     Tables: {
+      calls: {
+        Row: {
+          call_type: Database["public"]["Enums"]["call_type"]
+          callee_id: string
+          caller_id: string
+          conversation_id: string
+          created_at: string
+          duration_seconds: number
+          ended_at: string | null
+          id: string
+          started_at: string | null
+          status: Database["public"]["Enums"]["call_status"]
+          updated_at: string
+        }
+        Insert: {
+          call_type?: Database["public"]["Enums"]["call_type"]
+          callee_id: string
+          caller_id: string
+          conversation_id: string
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          id?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["call_status"]
+          updated_at?: string
+        }
+        Update: {
+          call_type?: Database["public"]["Enums"]["call_type"]
+          callee_id?: string
+          caller_id?: string
+          conversation_id?: string
+          created_at?: string
+          duration_seconds?: number
+          ended_at?: string | null
+          id?: string
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["call_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_members: {
         Row: {
+          archived: boolean
           conversation_id: string
           joined_at: string
           last_read_at: string
           muted: boolean
+          pinned: boolean
           user_id: string
         }
         Insert: {
+          archived?: boolean
           conversation_id: string
           joined_at?: string
           last_read_at?: string
           muted?: boolean
+          pinned?: boolean
           user_id: string
         }
         Update: {
+          archived?: boolean
           conversation_id?: string
           joined_at?: string
           last_read_at?: string
           muted?: boolean
+          pinned?: boolean
           user_id?: string
         }
         Relationships: [
@@ -441,6 +497,14 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
+      call_status:
+        | "ringing"
+        | "accepted"
+        | "declined"
+        | "missed"
+        | "ended"
+        | "failed"
+      call_type: "voice" | "video"
       conversation_kind: "direct"
       friendship_status: "pending" | "accepted" | "blocked"
     }
@@ -571,6 +635,15 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
+      call_status: [
+        "ringing",
+        "accepted",
+        "declined",
+        "missed",
+        "ended",
+        "failed",
+      ],
+      call_type: ["voice", "video"],
       conversation_kind: ["direct"],
       friendship_status: ["pending", "accepted", "blocked"],
     },
