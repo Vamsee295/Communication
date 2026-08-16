@@ -91,12 +91,14 @@ export const updateCallStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase } = context;
-    const patch: Record<string, unknown> = { status: data.status };
-    if (data.status === "accepted") patch['started_at'] = new Date().toISOString();
-    if (["ended", "declined", "missed", "failed"].includes(data.status)) {
-      patch['ended_at'] = new Date().toISOString();
-      if (data.duration_seconds !== undefined) patch['duration_seconds'] = data.duration_seconds;
-    }
+    const now = new Date().toISOString();
+    const patch = {
+      status: data.status,
+      ...(data.status === "accepted" ? { started_at: now } : {}),
+      ...(["ended", "declined", "missed", "failed"].includes(data.status)
+        ? { ended_at: now, ...(data.duration_seconds !== undefined ? { duration_seconds: data.duration_seconds } : {}) }
+        : {}),
+    };
     const { error } = await supabase.from("calls").update(patch).eq("id", data.call_id);
     if (error) throw new Error(error.message);
     return { ok: true };

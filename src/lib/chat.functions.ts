@@ -792,10 +792,11 @@ export const setConversationFlags = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const patch: Record<string, boolean> = {};
-    if (data.pinned !== undefined) patch['pinned'] = data.pinned;
-    if (data.muted !== undefined) patch['muted'] = data.muted;
-    if (data.archived !== undefined) patch['archived'] = data.archived;
+    const patch = {
+      ...(data.pinned !== undefined ? { pinned: data.pinned } : {}),
+      ...(data.muted !== undefined ? { muted: data.muted } : {}),
+      ...(data.archived !== undefined ? { archived: data.archived } : {}),
+    };
     if (Object.keys(patch).length === 0) return { ok: true };
     const { error } = await supabase
       .from("conversation_members")
