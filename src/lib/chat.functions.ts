@@ -75,7 +75,7 @@ export const listConversations = createServerFn({ method: "GET" })
 
     const { data: myMemberships, error: mErr } = await supabase
       .from("conversation_members")
-      .select("conversation_id, last_read_at")
+      .select("conversation_id, last_read_at, pinned, muted, archived")
       .eq("user_id", userId);
     if (mErr) throw new Error(mErr.message);
     const convIds = (myMemberships ?? []).map((m) => m.conversation_id);
@@ -118,7 +118,15 @@ export const listConversations = createServerFn({ method: "GET" })
     }
 
     const lastReadByConv = new Map<string, string>();
-    for (const m of myMemberships ?? []) lastReadByConv.set(m.conversation_id, m.last_read_at);
+    const flagsByConv = new Map<string, { pinned: boolean; muted: boolean; archived: boolean }>();
+    for (const m of myMemberships ?? []) {
+      lastReadByConv.set(m.conversation_id, m.last_read_at);
+      flagsByConv.set(m.conversation_id, {
+        pinned: m.pinned ?? false,
+        muted: m.muted ?? false,
+        archived: m.archived ?? false,
+      });
+    }
 
     const unreadByConv = new Map<string, number>();
     await Promise.all(
@@ -142,6 +150,9 @@ export const listConversations = createServerFn({ method: "GET" })
         other: otherId ? profilesById.get(otherId) ?? null : null,
         last_message: lastByConv.get(c.id) ?? null,
         unread: unreadByConv.get(c.id) ?? 0,
+        pinned: flagsByConv.get(c.id)?.pinned ?? false,
+        muted: flagsByConv.get(c.id)?.muted ?? false,
+        archived: flagsByConv.get(c.id)?.archived ?? false,
       };
     });
     summaries.sort((a, b) => (a.last_message_at < b.last_message_at ? 1 : -1));
@@ -762,4 +773,124 @@ export const listMyMessageReceipts = createServerFn({ method: "GET" })
       .select("message_id, delivered_at, read_at")
       .in("message_id", ids);
     return rec ?? [];
+  });
+
+
+/* ======================= CONVERSATION MANAGEMENT ======================= */
+
+export const setConversationFlags = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        conversation_id: z.string().uuid(),
+        pinned: z.boolean().optional(),
+        muted: z.boolean().optional(),
+        archived: z.boolean().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const patch: Record<string, boolean> = {};
+    if (data.pinned !== undefined) patch['pinned'] = data.pinned;
+    if (data.muted !== undefined) patch['muted'] = data.muted;
+    if (data.archived !== undefined) patch['archived'] = data.archived;
+    if (Object.keys(patch).length === 0) return { ok: true };
+    const { error } = await supabase
+      .from("conversation_members")
+      .update(patch)
+      .eq("conversation_id", data.conversation_id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const markConversationUnread = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: last } = await supabase
+      .from("messages")
+      .select("created_at, sender_id")
+      .eq("conversation_id", data.conversation_id)
+      .neq("sender_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const stamp = last?.created_at
+      ? new Date(new Date(last.created_at).getTime() - 1000).toISOString()
+      : new Date(0).toISOString();
+    const { error } = await supabase
+      .from("conversation_members")
+      .update({ last_read_at: stamp })
+      .eq("conversation_id", data.conversation_id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const leaveConversation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("conversation_members")
+      .delete()
+      .eq("conversation_id", data.conversation_id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const blockContact = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ user_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("friendships")
+      .update({ status: "blocked", responded_at: new Date().toISOString() })
+      .or(
+        `and(requester_id.eq.${userId},addressee_id.eq.${data.user_id}),and(requester_id.eq.${data.user_id},addressee_id.eq.${userId})`,
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const listBlockedContacts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const { data: rows, error } = await supabase
+      .from("friendships")
+      .select("id, requester_id, addressee_id, status")
+      .eq("status", "blocked")
+      .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+    if (error) throw new Error(error.message);
+    const others = (rows ?? []).map((r) => (r.requester_id === userId ? r.addressee_id : r.requester_id));
+    if (others.length === 0) return [] as ChatProfile[];
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url, last_seen")
+      .in("id", others);
+    return (profs ?? []) as ChatProfile[];
+  });
+
+export const unblockContact = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ user_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { error } = await supabase
+      .from("friendships")
+      .update({ status: "accepted", responded_at: new Date().toISOString() })
+      .eq("status", "blocked")
+      .or(
+        `and(requester_id.eq.${userId},addressee_id.eq.${data.user_id}),and(requester_id.eq.${data.user_id},addressee_id.eq.${userId})`,
+      );
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
