@@ -19,6 +19,7 @@ import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authentic
 import { Route as AuthenticatedDevicesRouteImport } from './routes/_authenticated/devices'
 import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
 import { Route as AuthenticatedCameraRouteImport } from './routes/_authenticated/camera'
+import { Route as AuthenticatedCallsRouteImport } from './routes/_authenticated/calls'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats.index'
 import { Route as AuthenticatedChatsConversationIdRouteImport } from './routes/_authenticated/chats.$conversationId'
 
@@ -71,6 +72,11 @@ const AuthenticatedCameraRoute = AuthenticatedCameraRouteImport.update({
   path: '/camera',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCallsRoute = AuthenticatedCallsRouteImport.update({
+  id: '/calls',
+  path: '/calls',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedChatsIndexRoute = AuthenticatedChatsIndexRouteImport.update({
   id: '/chats/',
   path: '/chats/',
@@ -86,6 +92,7 @@ const AuthenticatedChatsConversationIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/calls': typeof AuthenticatedCallsRoute
   '/camera': typeof AuthenticatedCameraRoute
   '/contacts': typeof AuthenticatedContactsRoute
   '/devices': typeof AuthenticatedDevicesRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/calls': typeof AuthenticatedCallsRoute
   '/camera': typeof AuthenticatedCameraRoute
   '/contacts': typeof AuthenticatedContactsRoute
   '/devices': typeof AuthenticatedDevicesRoute
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/_authenticated/calls': typeof AuthenticatedCallsRoute
   '/_authenticated/camera': typeof AuthenticatedCameraRoute
   '/_authenticated/contacts': typeof AuthenticatedContactsRoute
   '/_authenticated/devices': typeof AuthenticatedDevicesRoute
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/calls'
     | '/camera'
     | '/contacts'
     | '/devices'
@@ -142,6 +152,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/calls'
     | '/camera'
     | '/contacts'
     | '/devices'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/_authenticated/calls'
     | '/_authenticated/camera'
     | '/_authenticated/contacts'
     | '/_authenticated/devices'
@@ -245,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCameraRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/calls': {
+      id: '/_authenticated/calls'
+      path: '/calls'
+      fullPath: '/calls'
+      preLoaderRoute: typeof AuthenticatedCallsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/chats/': {
       id: '/_authenticated/chats/'
       path: '/chats'
@@ -263,6 +282,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedRouteRouteChildren {
+  AuthenticatedCallsRoute: typeof AuthenticatedCallsRoute
   AuthenticatedCameraRoute: typeof AuthenticatedCameraRoute
   AuthenticatedContactsRoute: typeof AuthenticatedContactsRoute
   AuthenticatedDevicesRoute: typeof AuthenticatedDevicesRoute
@@ -275,6 +295,7 @@ interface AuthenticatedRouteRouteChildren {
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedCallsRoute: AuthenticatedCallsRoute,
   AuthenticatedCameraRoute: AuthenticatedCameraRoute,
   AuthenticatedContactsRoute: AuthenticatedContactsRoute,
   AuthenticatedDevicesRoute: AuthenticatedDevicesRoute,
