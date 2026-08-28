@@ -44,7 +44,10 @@ export function IncomingCallDialog({
           <Avatar peer={peer} size="md" />
         </div>
         <h2 className="mt-4 text-xl font-extrabold">{peerName(peer)}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        {peer?.username && (
+          <p className="mt-0.5 text-[12px] text-muted-foreground">@{peer.username}</p>
+        )}
+        <p className="mt-1 text-sm text-primary">
           Incoming {type === "video" ? "video" : "voice"} call
         </p>
         <div className="mt-7 flex items-center justify-center gap-5">
