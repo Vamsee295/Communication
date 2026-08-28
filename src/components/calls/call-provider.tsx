@@ -372,6 +372,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           from: myId,
           conversation_id: conversationId,
           call_type: type,
+          peer: myProfileRef.current,
           sdp: offer,
         });
 
