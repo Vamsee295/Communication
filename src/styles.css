@@ -55,6 +55,7 @@
   --animate-msg-in: msg-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-rise-in: rise-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
   --animate-typing-dot: typing-dot 1.1s ease-in-out infinite;
+  --animate-breathe: breathe 5.5s ease-in-out infinite;
 }
 
 /* Ghostline — premium dark, privacy-first. Near-black layered surfaces, restrained yellow accent. */
@@ -142,6 +143,15 @@
 @keyframes typing-dot {
   0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-2px); }
+}
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 208, 44, 0); }
+  50% { box-shadow: 0 0 34px -6px var(--glow); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe { animation: none !important; }
 }
 
 @utility glass {
