@@ -9,9 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { rtcConfig } from "@/lib/webrtc-config";
 import { createCall, updateCallStatus, type CallPeer, type CallType } from "@/lib/calls.functions";
+import { getMyProfile } from "@/lib/profile.functions";
 import { CallOverlay, IncomingCallDialog } from "./call-ui";
 
 export type CallState =
