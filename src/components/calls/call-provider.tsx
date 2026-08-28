@@ -98,8 +98,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const activeRef = useRef<ActiveCall | null>(null);
   const startedAt = useRef<number | null>(null);
   const ringtoneRef = useRef<{ ctx: AudioContext; stop: () => void } | null>(null);
+  const myProfileRef = useRef<CallPeer | null>(null);
 
   activeRef.current = active;
+
+  /* -------------------- my trusted profile (for signaling) -------------------- */
+  const fetchMyProfile = useServerFn(getMyProfile);
+  useEffect(() => {
+    if (!myId) {
+      myProfileRef.current = null;
+      return;
+    }
+    let alive = true;
+    fetchMyProfile()
+      .then((p) => {
+        if (!alive || !p) return;
+        myProfileRef.current = {
+          id: p.id,
+          username: p.username ?? null,
+          display_name: p.display_name ?? null,
+          avatar_url: p.avatar_url ?? null,
+        };
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [myId, fetchMyProfile]);
+
 
   /* ------------------------------ session ------------------------------ */
   useEffect(() => {
