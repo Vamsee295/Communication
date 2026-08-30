@@ -2,13 +2,26 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, Save, Smartphone, Star } from "lucide-react";
+import { ChevronRight, LogOut, Save, Settings, ShieldBan, Smartphone, Star } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { getMyProfile, updateProfile } from "@/lib/profile.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_authenticated/profile")({
+  head: () => ({
+    meta: [
+      { title: "Your profile · Ghostline" },
+      {
+        name: "description",
+        content: "Edit your Ghostline display name, bio and username, and jump into privacy settings.",
+      },
+      { property: "og:title", content: "Your profile · Ghostline" },
+      { property: "og:description", content: "Edit your Ghostline identity and privacy settings." },
+      { property: "og:type", content: "profile" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: ProfilePage,
 });
 
