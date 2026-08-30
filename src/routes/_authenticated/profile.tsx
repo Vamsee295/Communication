@@ -97,26 +97,38 @@ function ProfilePage() {
           </button>
         </div>
 
-        <div className="mt-8 grid gap-2">
-          <Link
-            to="/starred"
-            className="glass flex items-center gap-3 rounded-2xl px-4 py-4"
-          >
+        <div className="mt-8 grid gap-2 pb-16">
+          <Link to="/settings" className="panel flex items-center gap-3 rounded-2xl px-4 py-4">
+            <Settings className="h-5 w-5 text-primary" />
+            <div className="flex-1">
+              <p className="font-semibold">Settings</p>
+              <p className="text-xs text-muted-foreground">Privacy, notifications, appearance</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+          <Link to="/starred" className="panel flex items-center gap-3 rounded-2xl px-4 py-4">
             <Star className="h-5 w-5 text-primary" />
             <div className="flex-1">
               <p className="font-semibold">Starred messages</p>
               <p className="text-xs text-muted-foreground">Your saved favorites</p>
             </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
-          <Link
-            to="/devices"
-            className="glass flex items-center gap-3 rounded-2xl px-4 py-4"
-          >
+          <Link to="/devices" className="panel flex items-center gap-3 rounded-2xl px-4 py-4">
             <Smartphone className="h-5 w-5 text-primary" />
             <div className="flex-1">
               <p className="font-semibold">Devices</p>
               <p className="text-xs text-muted-foreground">Manage where you're signed in</p>
             </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+          <Link to="/blocked" className="panel flex items-center gap-3 rounded-2xl px-4 py-4">
+            <ShieldBan className="h-5 w-5 text-primary" />
+            <div className="flex-1">
+              <p className="font-semibold">Blocked contacts</p>
+              <p className="text-xs text-muted-foreground">People who can't reach you</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
         </div>
       </div>
