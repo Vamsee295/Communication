@@ -1,11 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { MessageCircle, Camera, PlaySquare, User, ShieldCheck } from "lucide-react";
+import { MessageCircle, Phone, User, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
+import { CommandPalette } from "@/components/command-palette";
 
 const tabs = [
   { to: "/chats", label: "Chats", icon: MessageCircle },
-  { to: "/camera", label: "Camera", icon: Camera },
-  { to: "/stories", label: "Stories", icon: PlaySquare },
+  { to: "/calls", label: "Calls", icon: Phone },
   { to: "/profile", label: "Profile", icon: User },
 ] as const;
 
@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <CommandPalette />
       {/* Desktop rail */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-sidebar/80 px-4 py-6 lg:flex">
         <div className="flex items-center gap-2.5 px-2">

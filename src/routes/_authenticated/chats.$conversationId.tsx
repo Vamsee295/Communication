@@ -521,20 +521,20 @@ function ChatRoom() {
 
   return (
     <div className="flex h-[100dvh] flex-col">
-      <header className="glass sticky top-0 z-30 flex items-center gap-2 px-3 py-3">
+      <header className="glass sticky top-0 z-30 flex items-center gap-2 px-3 py-2.5">
         <button
           onClick={() => navigate({ to: "/chats" })}
-          className="grid h-9 w-9 place-items-center rounded-full border border-border"
+          className="press grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border"
           aria-label="Back"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <div className="relative">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/20 font-bold text-primary">
+        <div className="relative shrink-0">
+          <div className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 font-bold text-primary ring-1 ring-border">
             {(otherProfile?.display_name ?? otherProfile?.username ?? "?").charAt(0).toUpperCase()}
           </div>
           {isOnline && (
-            <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-emerald-400" />
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-400" />
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -542,34 +542,92 @@ function ChatRoom() {
             {otherProfile?.display_name ?? otherProfile?.username ?? "Ghost"}
           </p>
           <p className="truncate text-[11px] text-muted-foreground">
-            {isOnline ? "Online now" : otherProfile?.username ? "@" + otherProfile.username : ""}
+            {otherProfile?.username && <span>@{otherProfile.username} · </span>}
+            <span className={isOnline ? "text-emerald-400" : ""}>
+              {statusLabel(isOnline, otherProfile?.last_seen)}
+            </span>
           </p>
         </div>
+
+        <button
+          onClick={() => setPrivacyOpen((v) => !v)}
+          className="press hidden shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground hover:text-foreground sm:flex"
+          aria-label="Privacy information"
+        >
+          <Lock className="h-3 w-3 text-primary" /> Private
+        </button>
         <button
           onClick={() => {
             setSearchOpen((v) => !v);
             setSearchQ("");
             setSearchHits([]);
           }}
-          className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/10"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10"
           aria-label="Search"
         >
           <Search className="h-4 w-4" />
         </button>
         <button
-          onClick={() => showToast("Calls coming soon")}
-          className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/10"
+          onClick={() => ring("voice")}
+          disabled={!otherId}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10 disabled:opacity-40"
           aria-label="Voice call"
         >
           <Phone className="h-4 w-4" />
         </button>
         <button
-          onClick={() => showToast("More coming soon")}
-          className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/10"
+          onClick={() => ring("video")}
+          disabled={!otherId}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10 disabled:opacity-40"
+          aria-label="Video call"
+        >
+          <Video className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => setHeaderMenu((v) => !v)}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10"
           aria-label="More"
         >
           <MoreVertical className="h-4 w-4" />
         </button>
+
+        {privacyOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setPrivacyOpen(false)} />
+            <div className="glass absolute right-3 top-14 z-50 w-72 rounded-xl p-4 text-[12px] leading-relaxed text-muted-foreground shadow-2xl">
+              <p className="mb-1 text-[13px] font-bold text-foreground">How this chat is protected</p>
+              Voice and video calls connect peer-to-peer and are encrypted in transit (DTLS-SRTP) — they
+              are never recorded. Messages are encrypted in transit and only members of this
+              conversation can read them. End-to-end encryption for messages is not enabled yet.
+            </div>
+          </>
+        )}
+
+        {headerMenu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setHeaderMenu(false)} />
+            <div className="glass absolute right-3 top-14 z-50 w-52 overflow-hidden rounded-xl py-1 shadow-2xl">
+              <button
+                onClick={() => {
+                  setHeaderMenu(false);
+                  setPinsCollapsed((v) => !v);
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
+              >
+                <Pin className="h-4 w-4" /> {pinsCollapsed ? "Show pinned" : "Hide pinned"}
+              </button>
+              <button
+                onClick={() => {
+                  setHeaderMenu(false);
+                  setPrivacyOpen(true);
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
+              >
+                <Lock className="h-4 w-4" /> Privacy details
+              </button>
+            </div>
+          </>
+        )}
       </header>
 
       {searchOpen && (
