@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <CommandPalette />
       {/* Desktop rail */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-sidebar/80 px-4 py-6 lg:flex">
         <div className="flex items-center gap-2.5 px-2">
