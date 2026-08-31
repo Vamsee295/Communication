@@ -153,6 +153,8 @@ function ChatRoom() {
 
   const meId = me.data?.id;
   const otherId = conv.data?.other?.id;
+  const { onlineIds } = usePresence();
+  const { startCall } = useCalls();
 
   // Preview cache for reply targets outside window
   const [previewCache, setPreviewCache] = useState<Map<string, MessageRow>>(new Map());
