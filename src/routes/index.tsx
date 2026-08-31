@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { Ghost, Camera, Lock, Sparkles } from "lucide-react";
+import { Ghost, Video, Lock, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
@@ -29,18 +29,17 @@ function Landing() {
 
         <div className="mt-16 flex-1">
           <h1 className="text-5xl font-black leading-[1.05] tracking-tight">
-            Say it.<br />
-            <span className="text-primary">Then let it vanish.</span>
+            Private by default.<br />
+            <span className="text-primary">Loud when it matters.</span>
           </h1>
           <p className="mt-6 text-base text-muted-foreground">
-            End-to-end encrypted messaging with a camera-first vibe.
-            Your moments don't stick around.
+            Fast messaging with peer-to-peer voice and video calls. Nothing recorded, nothing sold.
           </p>
 
           <div className="mt-10 grid gap-3">
-            <FeatureRow icon={<Lock className="h-4 w-4" />} label="Signal-grade encryption" />
-            <FeatureRow icon={<Camera className="h-4 w-4" />} label="Camera-first messaging" />
-            <FeatureRow icon={<Sparkles className="h-4 w-4" />} label="View-once & disappearing" />
+            <FeatureRow icon={<Lock className="h-4 w-4" />} label="Encrypted in transit, private by policy" />
+            <FeatureRow icon={<Video className="h-4 w-4" />} label="Peer-to-peer voice & video calls" />
+            <FeatureRow icon={<Sparkles className="h-4 w-4" />} label="Reactions, replies, pins & stars" />
           </div>
         </div>
 
