@@ -12,14 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedStoriesRouteImport } from './routes/_authenticated/stories'
 import { Route as AuthenticatedStarredRouteImport } from './routes/_authenticated/starred'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedOnboardingRouteImport } from './routes/_authenticated/onboarding'
 import { Route as AuthenticatedDevicesRouteImport } from './routes/_authenticated/devices'
 import { Route as AuthenticatedContactsRouteImport } from './routes/_authenticated/contacts'
-import { Route as AuthenticatedCameraRouteImport } from './routes/_authenticated/camera'
 import { Route as AuthenticatedCallsRouteImport } from './routes/_authenticated/calls'
 import { Route as AuthenticatedBlockedRouteImport } from './routes/_authenticated/blocked'
 import { Route as AuthenticatedChatsIndexRouteImport } from './routes/_authenticated/chats.index'
@@ -38,11 +36,6 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedStoriesRoute = AuthenticatedStoriesRouteImport.update({
-  id: '/stories',
-  path: '/stories',
-  getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedStarredRoute = AuthenticatedStarredRouteImport.update({
   id: '/starred',
@@ -74,11 +67,6 @@ const AuthenticatedContactsRoute = AuthenticatedContactsRouteImport.update({
   path: '/contacts',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedCameraRoute = AuthenticatedCameraRouteImport.update({
-  id: '/camera',
-  path: '/camera',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedCallsRoute = AuthenticatedCallsRouteImport.update({
   id: '/calls',
   path: '/calls',
@@ -106,14 +94,12 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/blocked': typeof AuthenticatedBlockedRoute
   '/calls': typeof AuthenticatedCallsRoute
-  '/camera': typeof AuthenticatedCameraRoute
   '/contacts': typeof AuthenticatedContactsRoute
   '/devices': typeof AuthenticatedDevicesRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/starred': typeof AuthenticatedStarredRoute
-  '/stories': typeof AuthenticatedStoriesRoute
   '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
 }
@@ -122,14 +108,12 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/blocked': typeof AuthenticatedBlockedRoute
   '/calls': typeof AuthenticatedCallsRoute
-  '/camera': typeof AuthenticatedCameraRoute
   '/contacts': typeof AuthenticatedContactsRoute
   '/devices': typeof AuthenticatedDevicesRoute
   '/onboarding': typeof AuthenticatedOnboardingRoute
   '/profile': typeof AuthenticatedProfileRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/starred': typeof AuthenticatedStarredRoute
-  '/stories': typeof AuthenticatedStoriesRoute
   '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
 }
@@ -140,14 +124,12 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/blocked': typeof AuthenticatedBlockedRoute
   '/_authenticated/calls': typeof AuthenticatedCallsRoute
-  '/_authenticated/camera': typeof AuthenticatedCameraRoute
   '/_authenticated/contacts': typeof AuthenticatedContactsRoute
   '/_authenticated/devices': typeof AuthenticatedDevicesRoute
   '/_authenticated/onboarding': typeof AuthenticatedOnboardingRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/starred': typeof AuthenticatedStarredRoute
-  '/_authenticated/stories': typeof AuthenticatedStoriesRoute
   '/_authenticated/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
 }
@@ -158,14 +140,12 @@ export interface FileRouteTypes {
     | '/auth'
     | '/blocked'
     | '/calls'
-    | '/camera'
     | '/contacts'
     | '/devices'
     | '/onboarding'
     | '/profile'
     | '/settings'
     | '/starred'
-    | '/stories'
     | '/chats/$conversationId'
     | '/chats/'
   fileRoutesByTo: FileRoutesByTo
@@ -174,14 +154,12 @@ export interface FileRouteTypes {
     | '/auth'
     | '/blocked'
     | '/calls'
-    | '/camera'
     | '/contacts'
     | '/devices'
     | '/onboarding'
     | '/profile'
     | '/settings'
     | '/starred'
-    | '/stories'
     | '/chats/$conversationId'
     | '/chats'
   id:
@@ -191,14 +169,12 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/blocked'
     | '/_authenticated/calls'
-    | '/_authenticated/camera'
     | '/_authenticated/contacts'
     | '/_authenticated/devices'
     | '/_authenticated/onboarding'
     | '/_authenticated/profile'
     | '/_authenticated/settings'
     | '/_authenticated/starred'
-    | '/_authenticated/stories'
     | '/_authenticated/chats/$conversationId'
     | '/_authenticated/chats/'
   fileRoutesById: FileRoutesById
@@ -231,13 +207,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/_authenticated/stories': {
-      id: '/_authenticated/stories'
-      path: '/stories'
-      fullPath: '/stories'
-      preLoaderRoute: typeof AuthenticatedStoriesRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/starred': {
       id: '/_authenticated/starred'
@@ -281,13 +250,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContactsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/camera': {
-      id: '/_authenticated/camera'
-      path: '/camera'
-      fullPath: '/camera'
-      preLoaderRoute: typeof AuthenticatedCameraRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/calls': {
       id: '/_authenticated/calls'
       path: '/calls'
@@ -322,14 +284,12 @@ declare module '@tanstack/react-router' {
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedBlockedRoute: typeof AuthenticatedBlockedRoute
   AuthenticatedCallsRoute: typeof AuthenticatedCallsRoute
-  AuthenticatedCameraRoute: typeof AuthenticatedCameraRoute
   AuthenticatedContactsRoute: typeof AuthenticatedContactsRoute
   AuthenticatedDevicesRoute: typeof AuthenticatedDevicesRoute
   AuthenticatedOnboardingRoute: typeof AuthenticatedOnboardingRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedStarredRoute: typeof AuthenticatedStarredRoute
-  AuthenticatedStoriesRoute: typeof AuthenticatedStoriesRoute
   AuthenticatedChatsConversationIdRoute: typeof AuthenticatedChatsConversationIdRoute
   AuthenticatedChatsIndexRoute: typeof AuthenticatedChatsIndexRoute
 }
@@ -337,14 +297,12 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedBlockedRoute: AuthenticatedBlockedRoute,
   AuthenticatedCallsRoute: AuthenticatedCallsRoute,
-  AuthenticatedCameraRoute: AuthenticatedCameraRoute,
   AuthenticatedContactsRoute: AuthenticatedContactsRoute,
   AuthenticatedDevicesRoute: AuthenticatedDevicesRoute,
   AuthenticatedOnboardingRoute: AuthenticatedOnboardingRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedStarredRoute: AuthenticatedStarredRoute,
-  AuthenticatedStoriesRoute: AuthenticatedStoriesRoute,
   AuthenticatedChatsConversationIdRoute: AuthenticatedChatsConversationIdRoute,
   AuthenticatedChatsIndexRoute: AuthenticatedChatsIndexRoute,
 }

@@ -25,6 +25,7 @@ import {
   ChevronUp,
   ChevronDown,
   CheckSquare,
+  Lock,
 } from "lucide-react";
 import {
   getConversation,
@@ -52,6 +53,8 @@ import {
 } from "@/lib/chat.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { usePresence, statusLabel } from "@/components/presence-provider";
+import { useCalls } from "@/components/calls/call-provider";
 
 export const Route = createFileRoute("/_authenticated/chats/$conversationId")({
   component: ChatRoom,
@@ -141,6 +144,8 @@ function ChatRoom() {
   const [searchHits, setSearchHits] = useState<string[]>([]);
   const [searchIdx, setSearchIdx] = useState(0);
   const [pinsCollapsed, setPinsCollapsed] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [headerMenu, setHeaderMenu] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -148,6 +153,8 @@ function ChatRoom() {
 
   const meId = me.data?.id;
   const otherId = conv.data?.other?.id;
+  const { onlineIds } = usePresence();
+  const { startCall } = useCalls();
 
   // Preview cache for reply targets outside window
   const [previewCache, setPreviewCache] = useState<Map<string, MessageRow>>(new Map());
@@ -515,9 +522,27 @@ function ChatRoom() {
     scrollToMessage(searchHits[n]);
   };
 
-  const isOnline = otherId ? presentIds.has(otherId) : false;
-  const pinnedMessages = pins.data?.messages ?? [];
   const otherProfile = conv.data?.other ?? null;
+  const isOnline = (otherId ? presentIds.has(otherId) : false) || (!!otherId && onlineIds.has(otherId));
+  const pinnedMessages = pins.data?.messages ?? [];
+
+  const ring = (type: "voice" | "video") => {
+    if (!otherId) return;
+    void startCall({
+      conversationId,
+      peerId: otherId,
+      peer: otherProfile
+        ? {
+            id: otherProfile.id,
+            username: otherProfile.username,
+            display_name: otherProfile.display_name,
+            avatar_url: otherProfile.avatar_url,
+          }
+        : null,
+      type,
+    });
+  };
+
 
   return (
     <div className="flex h-[100dvh] flex-col">
