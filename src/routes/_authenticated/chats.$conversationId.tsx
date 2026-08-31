@@ -53,6 +53,8 @@ import {
 } from "@/lib/chat.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { usePresence, statusLabel } from "@/components/presence-provider";
+import { useCalls } from "@/components/calls/call-provider";
 
 export const Route = createFileRoute("/_authenticated/chats/$conversationId")({
   component: ChatRoom,
