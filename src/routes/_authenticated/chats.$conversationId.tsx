@@ -520,9 +520,27 @@ function ChatRoom() {
     scrollToMessage(searchHits[n]);
   };
 
-  const isOnline = otherId ? presentIds.has(otherId) : false;
-  const pinnedMessages = pins.data?.messages ?? [];
   const otherProfile = conv.data?.other ?? null;
+  const isOnline = (otherId ? presentIds.has(otherId) : false) || (!!otherId && onlineIds.has(otherId));
+  const pinnedMessages = pins.data?.messages ?? [];
+
+  const ring = (type: "voice" | "video") => {
+    if (!otherId) return;
+    void startCall({
+      conversationId,
+      peerId: otherId,
+      peer: otherProfile
+        ? {
+            id: otherProfile.id,
+            username: otherProfile.username,
+            display_name: otherProfile.display_name,
+            avatar_url: otherProfile.avatar_url,
+          }
+        : null,
+      type,
+    });
+  };
+
 
   return (
     <div className="flex h-[100dvh] flex-col">
