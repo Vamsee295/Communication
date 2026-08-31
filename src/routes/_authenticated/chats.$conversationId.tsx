@@ -25,6 +25,7 @@ import {
   ChevronUp,
   ChevronDown,
   CheckSquare,
+  Lock,
 } from "lucide-react";
 import {
   getConversation,
@@ -141,6 +142,8 @@ function ChatRoom() {
   const [searchHits, setSearchHits] = useState<string[]>([]);
   const [searchIdx, setSearchIdx] = useState(0);
   const [pinsCollapsed, setPinsCollapsed] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [headerMenu, setHeaderMenu] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
