@@ -407,6 +407,12 @@ function ChatRoom() {
     }
   }, [editing]);
 
+  // Reset the auto-grown composer height once it is emptied
+  useEffect(() => {
+    if (text === "" && composerRef.current) composerRef.current.style.height = "";
+  }, [text]);
+
+
   const submit = () => {
     const body = text.trim();
     if (!body) return;
