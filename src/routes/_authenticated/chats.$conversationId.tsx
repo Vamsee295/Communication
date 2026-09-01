@@ -53,6 +53,7 @@ import {
 } from "@/lib/chat.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { supabase } from "@/integrations/supabase/client";
+import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import { usePresence, statusLabel } from "@/components/presence-provider";
 import { useCalls } from "@/components/calls/call-provider";
 
@@ -553,7 +554,7 @@ function ChatRoom() {
       <header className="glass sticky top-0 z-30 flex items-center gap-1 px-2 py-2.5 sm:gap-2 sm:px-3">
         <button
           onClick={() => navigate({ to: "/chats" })}
-          className="press grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border"
+          className="press grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border"
           aria-label="Back"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -591,7 +592,7 @@ function ChatRoom() {
             setSearchQ("");
             setSearchHits([]);
           }}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10"
+          className="hidden h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 sm:grid"
           aria-label="Search"
         >
           <Search className="h-4 w-4" />
@@ -599,7 +600,7 @@ function ChatRoom() {
         <button
           onClick={() => ring("voice")}
           disabled={!otherId}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10 disabled:opacity-40"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 active:bg-white/10 disabled:opacity-40"
           aria-label="Voice call"
         >
           <Phone className="h-4 w-4" />
@@ -607,14 +608,14 @@ function ChatRoom() {
         <button
           onClick={() => ring("video")}
           disabled={!otherId}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10 disabled:opacity-40"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 active:bg-white/10 disabled:opacity-40"
           aria-label="Video call"
         >
           <Video className="h-4 w-4" />
         </button>
         <button
           onClick={() => setHeaderMenu((v) => !v)}
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full hover:bg-white/10"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10"
           aria-label="More"
         >
           <MoreVertical className="h-4 w-4" />
@@ -636,6 +637,17 @@ function ChatRoom() {
           <>
             <div className="fixed inset-0 z-40" onClick={() => setHeaderMenu(false)} />
             <div className="glass absolute right-3 top-14 z-50 w-52 overflow-hidden rounded-xl py-1 shadow-2xl">
+              <button
+                onClick={() => {
+                  setHeaderMenu(false);
+                  setSearchQ("");
+                  setSearchHits([]);
+                  setSearchOpen(true);
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-3 text-left text-[13px] hover:bg-surface-2 sm:hidden"
+              >
+                <Search className="h-4 w-4" /> Search in chat
+              </button>
               <button
                 onClick={() => {
                   setHeaderMenu(false);
@@ -908,7 +920,18 @@ function ChatRoom() {
             <textarea
               ref={composerRef}
               value={text}
-              onChange={(e) => { setText(e.target.value); notifyTyping(); }}
+              onChange={(e) => {
+                setText(e.target.value);
+                notifyTyping();
+                const el = e.currentTarget;
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+              }}
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+                }, 250);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
               }}
