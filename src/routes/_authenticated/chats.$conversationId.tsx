@@ -148,6 +148,7 @@ function ChatRoom() {
   const [headerMenu, setHeaderMenu] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardInset = useKeyboardInset();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bubbleRefs = useRef<Map<string, HTMLLIElement>>(new Map());
 
