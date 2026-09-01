@@ -546,8 +546,11 @@ function ChatRoom() {
 
 
   return (
-    <div className="flex h-[100dvh] flex-col">
-      <header className="glass sticky top-0 z-30 flex items-center gap-2 px-3 py-2.5">
+    <div
+      className="flex flex-col overscroll-none"
+      style={{ height: `calc(100dvh - ${keyboardInset}px)` }}
+    >
+      <header className="glass sticky top-0 z-30 flex items-center gap-1 px-2 py-2.5 sm:gap-2 sm:px-3">
         <button
           onClick={() => navigate({ to: "/chats" })}
           className="press grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border"
