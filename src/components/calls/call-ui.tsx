@@ -38,7 +38,7 @@ export function IncomingCallDialog({
   }, [onDecline]);
 
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-end bg-black/40 p-4 backdrop-blur-sm sm:place-items-center">
+    <div className="fixed inset-0 z-[100] grid place-items-end bg-black/40 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:place-items-center">
       <div className="glass animate-rise-in w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl">
         <div className="flex justify-center">
           <Avatar peer={peer} size="md" />
@@ -50,17 +50,17 @@ export function IncomingCallDialog({
         <p className="mt-1 text-sm text-primary">
           Incoming {type === "video" ? "video" : "voice"} call
         </p>
-        <div className="mt-7 flex items-center justify-center gap-5">
+        <div className="mt-7 flex items-center justify-center gap-8 sm:gap-5">
           <button
             onClick={onDecline}
-            className="press grid h-14 w-14 place-items-center rounded-full bg-destructive text-destructive-foreground"
+            className="press grid h-[68px] w-[68px] place-items-center rounded-full bg-destructive text-destructive-foreground sm:h-14 sm:w-14"
             aria-label="Decline"
           >
-            <PhoneOff className="h-5 w-5" />
+            <PhoneOff className="h-6 w-6 sm:h-5 sm:w-5" />
           </button>
           <button
             onClick={onAccept}
-            className="press grid h-14 w-14 place-items-center rounded-full bg-success text-[#05060a]"
+            className="press grid h-[68px] w-[68px] place-items-center rounded-full bg-success text-[#05060a] sm:h-14 sm:w-14"
             aria-label="Accept"
           >
             {type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
@@ -94,6 +94,17 @@ function stateLabel(state: string, seconds: number, name: string, error: string 
   }
 }
 
+function PermissionHint({ error }: { error: string | null }) {
+  if (!error) return null;
+  const isPermission = /access is required|access your/i.test(error);
+  if (!isPermission) return null;
+  return (
+    <p className="mx-auto max-w-xs rounded-2xl border border-border bg-black/50 px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
+      {error} Enable it for this site in your browser settings, then try the call again.
+    </p>
+  );
+}
+
 function Controls({
   type,
   muted,
@@ -110,15 +121,15 @@ function Controls({
   onHangUp: () => void;
 }) {
   const base =
-    "press grid h-14 w-14 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground";
+    "press grid h-16 w-16 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground sm:h-14 sm:w-14";
   return (
-    <div className="flex items-center justify-center gap-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <div className="flex items-center justify-center gap-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-4">
       <button onClick={onToggleMute} className={base} aria-label={muted ? "Unmute" : "Mute"}>
         {muted ? <MicOff className="h-5 w-5 text-destructive" /> : <Mic className="h-5 w-5" />}
       </button>
       <button
         onClick={onHangUp}
-        className="press grid h-16 w-16 place-items-center rounded-full bg-destructive text-destructive-foreground shadow-lg"
+        className="press grid h-[72px] w-[72px] place-items-center rounded-full bg-destructive text-destructive-foreground shadow-lg sm:h-16 sm:w-16"
         aria-label="End call"
       >
         <PhoneOff className="h-6 w-6" />
@@ -136,7 +147,7 @@ function Controls({
           )}
         </button>
       ) : (
-        <span className="h-14 w-14" />
+        <span className="h-16 w-16 sm:h-14 sm:w-14" />
       )}
     </div>
   );
@@ -207,7 +218,7 @@ export function CallOverlay({
               className="h-full w-full object-cover"
             />
           </div>
-          <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-5 pb-10 pt-6 text-center">
+          <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-center">
             <p className="text-lg font-extrabold">{name}</p>
             <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
               {stateLabel(state, seconds, name, error)}
@@ -215,7 +226,7 @@ export function CallOverlay({
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 pt-[env(safe-area-inset-top)] text-center">
           <Avatar peer={call.peer} />
           <div>
             <h2 className="text-2xl font-extrabold">{name}</h2>
@@ -223,6 +234,7 @@ export function CallOverlay({
               {stateLabel(state, seconds, name, error)}
             </p>
           </div>
+          <PermissionHint error={state === "FAILED" ? error : null} />
           <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Lock className="h-3 w-3" /> Peer-to-peer · never recorded
           </p>
