@@ -18,6 +18,7 @@ import {
   Trash2,
   ShieldBan,
   MailOpen,
+  ArrowLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, GhostMark } from "@/components/app-shell";
@@ -116,6 +117,7 @@ function ChatsPage() {
   }, [profile.data?.id, qc]);
 
   const [q, setQ] = useState("");
+  const [mobileSearch, setMobileSearch] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const trimmed = q.trim();
@@ -192,51 +194,8 @@ function ChatsPage() {
     />
   );
 
-  return (
-    <AppShell>
-      <div className="flex min-h-screen w-full">
-        {/* Conversation list column */}
-        <section className="flex min-w-0 flex-1 flex-col lg:max-w-[400px] lg:border-r lg:border-border">
-          <header className="sticky top-0 z-20 bg-background/85 px-5 pb-4 pt-8 backdrop-blur-xl lg:pt-6">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-              <div className="min-w-0">
-                <p className="brand-wordmark text-[10px] text-muted-foreground lg:hidden">Ghostline</p>
-                <h1 className="truncate text-[28px] font-extrabold tracking-tight">Chats</h1>
-              </div>
-              <Link
-                to="/contacts"
-                className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground glow-primary"
-                aria-label="Contacts"
-              >
-                <UserPlus className="h-[18px] w-[18px]" />
-              </Link>
-            </div>
-
-            <div className="focus-glow mt-4 flex items-center gap-2.5 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 transition">
-              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search chats and messages"
-                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-              />
-              {q ? (
-                <button
-                  onClick={() => setQ("")}
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-white/8 hover:text-foreground"
-                  aria-label="Clear"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              ) : (
-                <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground lg:block">
-                  ⌘K
-                </kbd>
-              )}
-            </div>
-          </header>
-
-          <div className="flex-1 px-3 pb-6">
+  const renderResults = () => (
+    <>
             {filtered.length === 0 && !trimmed ? (
               <div className="px-2">
                 <EmptyState />
@@ -301,7 +260,60 @@ function ChatsPage() {
               filtered.length === 0 && (
                 <p className="mt-10 text-center text-sm text-muted-foreground">No matches for "{trimmed}"</p>
               )}
-          </div>
+    </>
+  );
+
+  return (
+    <AppShell>
+      <div className="flex min-h-screen w-full">
+        {/* Conversation list column */}
+        <section className="flex min-w-0 flex-1 flex-col lg:max-w-[400px] lg:border-r lg:border-border">
+          <header className="sticky top-0 z-20 bg-background/85 px-5 pb-4 pt-8 backdrop-blur-xl lg:pt-6">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+              <div className="min-w-0">
+                <p className="brand-wordmark text-[10px] text-muted-foreground lg:hidden">Ghostline</p>
+                <h1 className="truncate text-[28px] font-extrabold tracking-tight">Chats</h1>
+              </div>
+              <Link
+                to="/contacts"
+                className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground glow-primary"
+                aria-label="Contacts"
+              >
+                <UserPlus className="h-[18px] w-[18px]" />
+              </Link>
+            </div>
+
+            <div className="focus-glow mt-4 flex items-center gap-2.5 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 transition">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onFocus={(e) => {
+                  if (window.matchMedia("(max-width: 1023px)").matches) {
+                    e.currentTarget.blur();
+                    setMobileSearch(true);
+                  }
+                }}
+                placeholder="Search chats and messages"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+              {q ? (
+                <button
+                  onClick={() => setQ("")}
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-white/8 hover:text-foreground"
+                  aria-label="Clear"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground lg:block">
+                  ⌘K
+                </kbd>
+              )}
+            </div>
+          </header>
+
+          <div className="flex-1 px-3 pb-6">{renderResults()}</div>
         </section>
 
         {/* Desktop detail pane */}
@@ -344,6 +356,48 @@ function ChatsPage() {
           }}
         />
       )}
+      {mobileSearch && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-background lg:hidden">
+          <header className="flex items-center gap-2 px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+            <button
+              onClick={() => setMobileSearch(false)}
+              className="press grid h-11 w-11 shrink-0 place-items-center rounded-full border border-border"
+              aria-label="Back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="focus-glow flex min-w-0 flex-1 items-center gap-2.5 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5">
+              <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search chats and messages"
+                className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+              {q && (
+                <button
+                  onClick={() => setQ("")}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground"
+                  aria-label="Clear"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </header>
+          <div className="flex-1 overflow-y-auto px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {trimmed ? (
+              renderResults()
+            ) : (
+              <p className="mt-16 text-center text-sm text-muted-foreground">
+                Search your chats and messages
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
     </AppShell>
   );
 }
