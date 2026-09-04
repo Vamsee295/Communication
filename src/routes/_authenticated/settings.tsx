@@ -1,5 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
 import {
   ChevronRight,
   Smartphone,
@@ -11,9 +14,12 @@ import {
   LogOut,
   Palette,
   Bell,
+  BellRing,
+  Loader2,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { supabase } from "@/integrations/supabase/client";
+import { authService } from "@/lib/auth/session";
+import { getVapidPublicKey, savePushSubscription, removePushSubscription } from "@/lib/chat.functions";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -31,6 +37,139 @@ export const Route = createFileRoute("/_authenticated/settings")({
   }),
   component: SettingsPage,
 });
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+function WebPushToggle() {
+  const fetchVapidKey = useServerFn(getVapidPublicKey);
+  const saveSub = useServerFn(savePushSubscription);
+  const removeSub = useServerFn(removePushSubscription);
+
+  const [supported, setSupported] = useState(true);
+  const [permission, setPermission] = useState<NotificationPermission>("default");
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setSupported(false);
+      return;
+    }
+    setPermission(Notification.permission);
+    navigator.serviceWorker.getRegistration("/ghostline-push-sw.js").then((reg) => {
+      if (reg) {
+        reg.pushManager.getSubscription().then((sub) => {
+          setSubscribed(!!sub);
+        });
+      }
+    });
+  }, []);
+
+  const enablePush = async () => {
+    setLoading(true);
+    try {
+      if (!supported) throw new Error("Push notifications are not supported in this browser");
+      const perm = await Notification.requestPermission();
+      setPermission(perm);
+      if (perm !== "granted") {
+        throw new Error("Notification permission denied");
+      }
+      const reg = await navigator.serviceWorker.register("/ghostline-push-sw.js");
+      await navigator.serviceWorker.ready;
+      const { public_key } = await fetchVapidKey();
+      const applicationServerKey = urlBase64ToUint8Array(public_key);
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey.buffer as ArrayBuffer });
+      const json = sub.toJSON();
+      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+        throw new Error("Invalid push subscription format from browser");
+      }
+      await saveSub({
+        data: {
+          endpoint: json.endpoint,
+          p256dh: json.keys.p256dh,
+          auth: json.keys.auth,
+          user_agent: navigator.userAgent.slice(0, 500),
+        },
+      });
+      setSubscribed(true);
+      toast.success("Web Push enabled successfully");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not enable push");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const disablePush = async () => {
+    setLoading(true);
+    try {
+      const reg = await navigator.serviceWorker.getRegistration("/ghostline-push-sw.js");
+      if (reg) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          const endpoint = sub.endpoint;
+          await sub.unsubscribe();
+          await removeSub({ data: { endpoint } });
+        }
+      }
+      setSubscribed(false);
+      toast.success("Web Push disabled");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not disable push");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3.5">
+      <div className="flex items-start gap-3">
+        <BellRing className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
+        <div>
+          <p className="text-sm font-semibold">Web Push Notifications</p>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">
+            {!supported
+              ? "Unsupported in this browser"
+              : permission === "denied"
+              ? "Permission blocked in browser settings"
+              : subscribed
+              ? "Receiving push alerts for new messages"
+              : "Receive background alerts when Ghostline is closed"}
+          </p>
+        </div>
+      </div>
+      {supported && permission !== "denied" && (
+        <button
+          onClick={subscribed ? disablePush : enablePush}
+          disabled={loading}
+          className={[
+            "press flex h-9 shrink-0 items-center justify-center rounded-xl px-3.5 text-xs font-semibold transition",
+            subscribed
+              ? "border border-border hover:bg-surface-2 text-foreground"
+              : "bg-primary text-primary-foreground glow-primary",
+          ].join(" ")}
+        >
+          {loading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : subscribed ? (
+            "Disable"
+          ) : (
+            "Enable"
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -76,7 +215,7 @@ function SettingsPage() {
   const signOut = async () => {
     await qc.cancelQueries();
     qc.clear();
-    await supabase.auth.signOut();
+    await authService.signOut();
     navigate({ to: "/auth", replace: true });
   };
 
@@ -107,13 +246,13 @@ function SettingsPage() {
         </Section>
 
         <Section title="Notifications">
-          <div className="flex items-start gap-3 px-4 py-3.5">
+          <WebPushToggle />
+          <div className="border-t border-border flex items-start gap-3 px-4 py-3.5">
             <Bell className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
             <div>
               <p className="text-sm font-semibold">Per-chat muting</p>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                Mute individual conversations from the chat list menu. System push notifications
-                aren't available yet.
+                Mute individual conversations directly from the chat options menu.
               </p>
             </div>
           </div>
@@ -137,7 +276,7 @@ function SettingsPage() {
             <div>
               <p className="text-sm font-semibold">Ghostline</p>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                Version 0.4 · Private messaging with peer-to-peer voice and video calls.
+                Version 1.0 · Private messaging with peer-to-peer voice and video calls.
               </p>
             </div>
           </div>

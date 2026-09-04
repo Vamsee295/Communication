@@ -1,11 +1,11 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { Ghost, Video, Lock, Sparkles } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { authService } from "@/lib/auth/session";
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
     if (typeof window === "undefined") return;
-    const { data } = await supabase.auth.getSession();
+    const { data } = await authService.getSession();
     if (data.session) throw redirect({ to: "/chats" });
   },
   component: Landing,

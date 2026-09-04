@@ -8,9 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useServerFn } from "@tanstack/react-start";
-import { supabase } from "@/integrations/supabase/client";
+import { authService } from "@/lib/auth/session";
+import { SupabaseCallSignaling } from "@/lib/infra/supabase/supabase-signaling";
+import type { SignalPayload } from "@/lib/ports/signaling";
 import { rtcConfig } from "@/lib/webrtc-config";
 import { createCall, updateCallStatus, type CallPeer, type CallType } from "@/lib/calls.functions";
 import { getMyProfile } from "@/lib/profile.functions";
@@ -27,17 +28,6 @@ export type CallState =
   | "MISSED"
   | "ENDED"
   | "FAILED";
-
-type SignalPayload = {
-  call_id: string;
-  from: string;
-  conversation_id?: string;
-  call_type?: CallType;
-  sdp?: RTCSessionDescriptionInit;
-  candidate?: RTCIceCandidateInit;
-  peer?: CallPeer | null;
-  reason?: string;
-};
 
 type ActiveCall = {
   id: string;
@@ -72,7 +62,6 @@ export function useCalls() {
 }
 
 const RING_TIMEOUT_MS = 35_000;
-const topicFor = (userId: string) => `calls:signal:${userId}`;
 
 export function CallProvider({ children }: { children: ReactNode }) {
   const [myId, setMyId] = useState<string | null>(null);
@@ -92,7 +81,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
-  const outChannels = useRef<Map<string, RealtimeChannel>>(new Map());
+  const signalingRef = useRef(new SupabaseCallSignaling());
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tickTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeRef = useRef<ActiveCall | null>(null);
@@ -130,10 +119,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
   /* ------------------------------ session ------------------------------ */
   useEffect(() => {
     let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
+    authService.getSession().then(({ data }) => {
       if (alive) setMyId(data.session?.user.id ?? null);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) =>
+    const { data: sub } = authService.onAuthStateChange((_e, session) =>
       setMyId(session?.user.id ?? null),
     );
     return () => {
@@ -145,18 +134,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   /* ----------------------------- signaling ----------------------------- */
   const sendSignal = useCallback(
     async (targetUserId: string, event: string, payload: SignalPayload) => {
-      let ch = outChannels.current.get(targetUserId);
-      if (!ch) {
-        ch = supabase.channel(topicFor(targetUserId), { config: { broadcast: { self: false } } });
-        outChannels.current.set(targetUserId, ch);
-        await new Promise<void>((resolve) => {
-          ch!.subscribe((status) => {
-            if (status === "SUBSCRIBED") resolve();
-          });
-          setTimeout(resolve, 3000);
-        });
-      }
-      await ch.send({ type: "broadcast", event, payload });
+      await signalingRef.current.send(targetUserId, event, payload);
     },
     [],
   );
@@ -451,11 +429,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   /* ------------------------- inbound signal wiring ---------------------- */
   useEffect(() => {
     if (!myId) return;
-    const channel = supabase.channel(topicFor(myId), { config: { broadcast: { self: false } } });
 
-    channel
-      .on("broadcast", { event: "call-offer" }, ({ payload }) => {
-        const p = payload as SignalPayload;
+    const unsubscribe = signalingRef.current.listen(myId, {
+      onOffer: (p) => {
         if (!p?.sdp) return;
         if (activeRef.current || incoming) {
           void sendSignal(p.from, "call-decline", { call_id: p.call_id, from: myId });
@@ -465,9 +441,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setIncoming({ payload: p, offer: p.sdp });
         setState("RINGING");
         startRingtone();
-      })
-      .on("broadcast", { event: "call-answer" }, async ({ payload }) => {
-        const p = payload as SignalPayload;
+      },
+      onAnswer: async (p) => {
         const pc = pcRef.current;
         if (!pc || !p?.sdp || activeRef.current?.id !== p.call_id) return;
         if (ringTimer.current) clearTimeout(ringTimer.current);
@@ -477,9 +452,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
           await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
         }
         pendingCandidates.current = [];
-      })
-      .on("broadcast", { event: "ice-candidate" }, async ({ payload }) => {
-        const p = payload as SignalPayload;
+      },
+      onIce: async (p) => {
         if (!p?.candidate) return;
         const pc = pcRef.current;
         if (pc && pc.remoteDescription) {
@@ -487,15 +461,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
         } else {
           pendingCandidates.current.push(p.candidate);
         }
-      })
-      .on("broadcast", { event: "call-decline" }, ({ payload }) => {
-        const p = payload as SignalPayload;
+      },
+      onDecline: (p) => {
         if (activeRef.current?.id !== p.call_id) return;
         setError("Call declined");
         finish("DECLINED", false);
-      })
-      .on("broadcast", { event: "call-end" }, ({ payload }) => {
-        const p = payload as SignalPayload;
+      },
+      onEnd: (p) => {
         if (incoming?.payload.call_id === p.call_id) {
           stopRingtone();
           setIncoming(null);
@@ -515,23 +487,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
           setActive(null);
           setState("IDLE");
         }, 1400);
-      })
-      .subscribe();
+      },
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return unsubscribe;
   }, [finish, incoming, myId, sendSignal, startRingtone, stopRingtone, teardown]);
 
   /* ---------------------------- cleanup on exit -------------------------- */
   useEffect(() => {
+    const signaling = signalingRef.current;
     const onUnload = () => teardown();
     window.addEventListener("beforeunload", onUnload);
     return () => {
       window.removeEventListener("beforeunload", onUnload);
       teardown();
-      outChannels.current.forEach((ch) => supabase.removeChannel(ch));
-      outChannels.current.clear();
+      signaling.dispose();
     };
   }, [teardown]);
 

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { authService } from "@/lib/auth/session";
+import { realtimeService } from "@/lib/realtime/create-realtime";
 
 type PresenceValue = {
   onlineIds: Set<string>;
@@ -38,10 +39,10 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
+    authService.getSession().then(({ data }) => {
       if (active) setMyId(data.session?.user.id ?? null);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: sub } = authService.onAuthStateChange((_e, session) => {
       setMyId(session?.user.id ?? null);
     });
     return () => {
@@ -55,23 +56,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       setOnlineIds(new Set());
       return;
     }
-    const channel = supabase.channel("presence:ghostline", {
-      config: { presence: { key: myId } },
-    });
-    const sync = () => {
-      const state = channel.presenceState() as Record<string, unknown>;
-      setOnlineIds(new Set(Object.keys(state)));
-    };
-    channel
-      .on("presence", { event: "sync" }, sync)
-      .on("presence", { event: "join" }, sync)
-      .on("presence", { event: "leave" }, sync)
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") channel.track({ at: Date.now() });
-      });
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return realtimeService.subscribeGlobalPresence(myId, setOnlineIds);
   }, [myId]);
 
   const value = useMemo(() => ({ onlineIds, myId }), [onlineIds, myId]);

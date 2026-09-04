@@ -6,7 +6,7 @@ import { ChevronRight, LogOut, Save, Settings, ShieldBan, Smartphone, Star } fro
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { getMyProfile, updateProfile } from "@/lib/profile.functions";
-import { supabase } from "@/integrations/supabase/client";
+import { authService } from "@/lib/auth/session";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -55,7 +55,7 @@ function ProfilePage() {
   const signOut = async () => {
     await qc.cancelQueries();
     qc.clear();
-    await supabase.auth.signOut();
+    await authService.signOut();
     navigate({ to: "/auth", replace: true });
   };
 

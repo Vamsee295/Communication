@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import { Ghost, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable";
+import { authService } from "@/lib/auth/session";
 
 const searchSchema = z.object({
   mode: z.enum(["signin", "signup"]).optional(),
@@ -31,7 +30,7 @@ function AuthPage() {
 
   useEffect(() => {
     // If already authed, bounce
-    supabase.auth.getSession().then(({ data }) => {
+    authService.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/chats", replace: true });
     });
   }, [navigate]);
@@ -46,15 +45,15 @@ function AuthPage() {
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: parsed.data.email,
-          password: parsed.data.password,
-          options: { emailRedirectTo: window.location.origin },
-        });
+        const { error } = await authService.signUpWithPassword(
+          parsed.data.email,
+          parsed.data.password,
+          window.location.origin,
+        );
         if (error) throw error;
         toast.success("Welcome to Ghostline");
       } else {
-        const { error } = await supabase.auth.signInWithPassword(parsed.data);
+        const { error } = await authService.signInWithPassword(parsed.data.email, parsed.data.password);
         if (error) throw error;
       }
       navigate({ to: "/chats", replace: true });
@@ -69,9 +68,7 @@ function AuthPage() {
   const handleGoogle = async () => {
     setGoogleLoading(true);
     try {
-      const result = await lovable.auth.signInWithOAuth("google", {
-        redirect_uri: window.location.origin,
-      });
+      const result = await authService.signInWithGoogle(window.location.origin);
       if (result.error) throw result.error;
       if (result.redirected) return;
       navigate({ to: "/chats", replace: true });

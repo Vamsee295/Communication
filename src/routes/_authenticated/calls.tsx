@@ -143,7 +143,7 @@ function CallsPage() {
                     <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-muted-foreground">
                       <Icon className="h-3.5 w-3.5 shrink-0" />
                       {label(c)} · {when(c.created_at)}
-                      {c.status === "ended" && c.duration_seconds > 0 && (
+                      {c.status === "ended" && !!c.duration_seconds && c.duration_seconds > 0 && (
                         <span className="tabular-nums"> · {formatDuration(c.duration_seconds)}</span>
                       )}
                     </p>

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   UserPlus,
   Users,
+  UsersRound,
   Search,
   X,
   Lock,
@@ -19,6 +20,7 @@ import {
   ShieldBan,
   MailOpen,
   ArrowLeft,
+  Check,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, GhostMark } from "@/components/app-shell";
@@ -26,6 +28,7 @@ import { registerDevice } from "@/lib/devices.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import {
   listConversations,
+  createGroupConversation,
   searchMessagesGlobal,
   setConversationFlags,
   markConversationUnread,
@@ -33,9 +36,10 @@ import {
   blockContact,
   type ConversationSummary,
 } from "@/lib/chat.functions";
+import { listFriendships, type FriendshipRow } from "@/lib/friendships.functions";
 import { getDeviceKey, guessDeviceName } from "@/lib/device-key";
 import { usePresence, statusLabel } from "@/components/presence-provider";
-import { supabase } from "@/integrations/supabase/client";
+import { realtimeService } from "@/lib/realtime/create-realtime";
 
 export const Route = createFileRoute("/_authenticated/chats/")({
   head: () => ({
@@ -63,6 +67,8 @@ function ChatsPage() {
   const register = useServerFn(registerDevice);
   const fetchConversations = useServerFn(listConversations);
   const fetchProfile = useServerFn(getMyProfile);
+  const fetchFriendships = useServerFn(listFriendships);
+  const doCreateGroup = useServerFn(createGroupConversation);
   const doFlags = useServerFn(setConversationFlags);
   const doUnread = useServerFn(markConversationUnread);
   const doLeave = useServerFn(leaveConversation);
@@ -70,6 +76,8 @@ function ChatsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { onlineIds } = usePresence();
+
+  const [showNewGroup, setShowNewGroup] = useState(false);
 
   const profile = useQuery({
     queryKey: ["me"],
@@ -102,18 +110,14 @@ function ChatsPage() {
   // Realtime: any message insert refreshes conversation list
   useEffect(() => {
     if (!profile.data?.id) return;
-    const channel = supabase
-      .channel(`chat:global:${profile.data.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+    return realtimeService.subscribeInbox(profile.data.id, {
+      onMessageInsert: () => {
         qc.invalidateQueries({ queryKey: ["conversations"] });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "friendships" }, () => {
+      },
+      onFriendshipChange: () => {
         qc.invalidateQueries({ queryKey: ["friendships"] });
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      },
+    });
   }, [profile.data?.id, qc]);
 
   const [q, setQ] = useState("");
@@ -153,6 +157,16 @@ function ChatsPage() {
       qc.invalidateQueries({ queryKey: ["blocked"] });
       refresh();
     },
+  });
+
+  const createGroup = useMutation({
+    mutationFn: (v: { title: string; member_ids: string[] }) => doCreateGroup({ data: v }),
+    onSuccess: (res) => {
+      refresh();
+      setShowNewGroup(false);
+      navigate({ to: "/chats/$conversationId", params: { conversationId: res.conversation_id } });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not create group"),
   });
 
   const filtered = useMemo(() => {
@@ -274,13 +288,23 @@ function ChatsPage() {
                 <p className="brand-wordmark text-[10px] text-muted-foreground lg:hidden">Ghostline</p>
                 <h1 className="truncate text-[28px] font-extrabold tracking-tight">Chats</h1>
               </div>
-              <Link
-                to="/contacts"
-                className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground glow-primary"
-                aria-label="Contacts"
-              >
-                <UserPlus className="h-[18px] w-[18px]" />
-              </Link>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowNewGroup(true)}
+                  className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-foreground"
+                  aria-label="New Group"
+                  title="New group chat"
+                >
+                  <UsersRound className="h-[18px] w-[18px]" />
+                </button>
+                <Link
+                  to="/contacts"
+                  className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground glow-primary"
+                  aria-label="Contacts"
+                >
+                  <UserPlus className="h-[18px] w-[18px]" />
+                </Link>
+              </div>
             </div>
 
             <div className="focus-glow mt-4 flex items-center gap-2.5 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 transition">
@@ -398,6 +422,15 @@ function ChatsPage() {
         </div>
       )}
 
+      {showNewGroup && (
+        <NewGroupSheet
+          fetchFriendships={fetchFriendships}
+          onClose={() => setShowNewGroup(false)}
+          onSubmit={(title, memberIds) => createGroup.mutate({ title, member_ids: memberIds })}
+          isPending={createGroup.isPending}
+        />
+      )}
+
     </AppShell>
   );
 }
@@ -429,7 +462,9 @@ function ChatRow({
   onDelete: () => void;
   onBlock: () => void;
 }) {
-  const name = c.other?.display_name ?? c.other?.username ?? "Ghost";
+  const name = c.kind === "group"
+    ? (c.title ?? "Group chat")
+    : (c.other?.display_name ?? c.other?.username ?? "Ghost");
   const last = c.last_message;
   const mine = last?.sender_id === meId;
   const preview = last ? (last.deleted_at ? "Message deleted" : last.body) : "Say hi 👋";
@@ -617,6 +652,120 @@ function EmptyState() {
       >
         Find friends
       </Link>
+    </div>
+  );
+}
+
+function NewGroupSheet({
+  fetchFriendships,
+  onClose,
+  onSubmit,
+  isPending,
+}: {
+  fetchFriendships: () => Promise<{ friendships: FriendshipRow[]; profiles: Record<string, unknown> }>;
+  onClose: () => void;
+  onSubmit: (title: string, memberIds: string[]) => void;
+  isPending: boolean;
+}) {
+  const fetchProfile = useServerFn(getMyProfile);
+  const me = useQuery({ queryKey: ["me"], queryFn: () => fetchProfile() });
+  const friendships = useQuery({ queryKey: ["friendships-for-group"], queryFn: () => fetchFriendships() });
+  
+  const meId = me.data?.id;
+  const accepted = (friendships.data?.friendships ?? []).filter((f) => f.status === "accepted");
+  const profilesMap = (friendships.data?.profiles ?? {}) as Record<string, { display_name?: string | null; username?: string | null }>;
+
+  const [title, setTitle] = useState("");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+
+  const toggle = (id: string) =>
+    setPicked((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const canSubmit = title.trim().length > 0 && picked.size > 0 && !isPending;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="glass w-full max-w-md rounded-t-3xl border border-border p-4 shadow-2xl animate-scale-in max-h-[85vh] overflow-hidden flex flex-col"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold">New Group</h3>
+          <button
+            onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <input
+            autoFocus
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Group name…"
+            maxLength={100}
+            className="w-full rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/40"
+          />
+        </div>
+
+        <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          Add members ({picked.size} selected)
+        </p>
+        <ul className="mt-2 flex-1 overflow-y-auto grid gap-1 pb-2">
+          {friendships.isPending && (
+            <li className="py-8 text-center text-sm text-muted-foreground">Loading friends…</li>
+          )}
+          {!friendships.isPending && accepted.length === 0 && (
+            <li className="py-8 text-center text-sm text-muted-foreground">No friends to add yet.</li>
+          )}
+          {accepted.map((f) => {
+            const friendId = f.requester_id === meId ? f.addressee_id : f.requester_id;
+            const prof = profilesMap[friendId];
+            const name = prof?.display_name ?? prof?.username ?? "Ghost Friend";
+            const handle = prof?.username ? `@${prof.username}` : undefined;
+            const on = picked.has(friendId);
+
+            return (
+              <li key={f.id}>
+                <button
+                  onClick={() => toggle(friendId)}
+                  className={[
+                    "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition",
+                    on ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-white/5",
+                  ].join(" ")}
+                >
+                  <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/20 font-bold text-primary text-sm">
+                    {name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{name}</p>
+                    {handle && <p className="truncate text-[11px] text-muted-foreground">{handle}</p>}
+                  </div>
+                  {on && <Check className="h-4 w-4 text-primary" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        <button
+          onClick={() => onSubmit(title.trim(), Array.from(picked))}
+          disabled={!canSubmit}
+          className="mt-3 h-11 rounded-full bg-primary font-semibold text-primary-foreground disabled:opacity-40"
+        >
+          {isPending ? "Creating…" : `Create group (${picked.size} member${picked.size === 1 ? "" : "s"})`}
+        </button>
+      </div>
     </div>
   );
 }

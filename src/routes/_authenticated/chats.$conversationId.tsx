@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Send,
@@ -26,6 +27,9 @@ import {
   ChevronDown,
   CheckSquare,
   Lock,
+  UserPlus,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import {
   getConversation,
@@ -48,9 +52,17 @@ import {
   getMessagesByIds,
   getMessageInfo,
   searchMessagesInConversation,
+  addGroupMember,
+  removeGroupMember,
+  updateGroupMemberRole,
+  updateGroupTitle,
+  leaveConversation,
   type MessageRow,
   type ChatProfile,
+  type ConversationSummary,
+  type GroupMemberRole,
 } from "@/lib/chat.functions";
+import { listFriendships, type FriendshipRow } from "@/lib/friendships.functions";
 import { getMyProfile } from "@/lib/profile.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
@@ -147,6 +159,7 @@ function ChatRoom() {
   const [pinsCollapsed, setPinsCollapsed] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [headerMenu, setHeaderMenu] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const keyboardInset = useKeyboardInset();
@@ -565,24 +578,42 @@ function ChatRoom() {
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <div className="relative shrink-0">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 font-bold text-primary ring-1 ring-border">
-            {(otherProfile?.display_name ?? otherProfile?.username ?? "?").charAt(0).toUpperCase()}
+        <div
+          className={conv.data?.conversation.kind === "group" ? "flex items-center gap-2 flex-1 min-w-0 cursor-pointer" : "flex items-center gap-2 flex-1 min-w-0"}
+          onClick={() => {
+            if (conv.data?.conversation.kind === "group") setShowGroupInfo(true);
+          }}
+        >
+          <div className="relative shrink-0">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 font-bold text-primary ring-1 ring-border">
+              {(conv.data?.conversation.kind === "group"
+                ? (conv.data.conversation.title ?? "G")
+                : (otherProfile?.display_name ?? otherProfile?.username ?? "?")
+              ).charAt(0).toUpperCase()}
+            </div>
+            {conv.data?.conversation.kind !== "group" && isOnline && (
+              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-400" />
+            )}
           </div>
-          {isOnline && (
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-400" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold">
-            {otherProfile?.display_name ?? otherProfile?.username ?? "Ghost"}
-          </p>
-          <p className="truncate text-[11px] text-muted-foreground">
-            {otherProfile?.username && <span>@{otherProfile.username} · </span>}
-            <span className={isOnline ? "text-emerald-400" : ""}>
-              {statusLabel(isOnline, otherProfile?.last_seen)}
-            </span>
-          </p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold">
+              {conv.data?.conversation.kind === "group"
+                ? (conv.data.conversation.title ?? "Group chat")
+                : (otherProfile?.display_name ?? otherProfile?.username ?? "Ghost")}
+            </p>
+            <p className="truncate text-[11px] text-muted-foreground">
+              {conv.data?.conversation.kind === "group" ? (
+                <span>{conv.data.members.length} member{conv.data.members.length === 1 ? "" : "s"}</span>
+              ) : (
+                <>
+                  {otherProfile?.username && <span>@{otherProfile.username} · </span>}
+                  <span className={isOnline ? "text-emerald-400" : ""}>
+                    {statusLabel(isOnline, otherProfile?.last_seen)}
+                  </span>
+                </>
+              )}
+            </p>
+          </div>
         </div>
 
         <button
@@ -654,6 +685,17 @@ function ChatRoom() {
               >
                 <Search className="h-4 w-4" /> Search in chat
               </button>
+              {conv.data?.conversation.kind === "group" && (
+                <button
+                  onClick={() => {
+                    setHeaderMenu(false);
+                    setShowGroupInfo(true);
+                  }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
+                >
+                  <Info className="h-4 w-4 text-primary" /> Group info & members
+                </button>
+              )}
               <button
                 onClick={() => {
                   setHeaderMenu(false);
@@ -1048,6 +1090,18 @@ function ChatRoom() {
         />
       )}
 
+      {showGroupInfo && conv.data?.conversation.kind === "group" && (
+        <GroupInfoSheet
+          conversationId={conversationId}
+          title={conv.data.conversation.title ?? "Group chat"}
+          created_by={conv.data.conversation.created_by ?? null}
+          members={conv.data.members}
+          myRole={conv.data.my_role}
+          meId={meId}
+          onClose={() => setShowGroupInfo(false)}
+        />
+      )}
+
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center">
           <div className="glass rounded-full px-4 py-2 text-xs font-medium shadow-lg">{toast}</div>
@@ -1293,9 +1347,7 @@ function ForwardSheet({
   me,
   selfProfile,
 }: {
-  fetchConversations: () => Promise<
-    Array<{ id: string; other: ChatProfile | null; last_message_at: string }>
-  >;
+  fetchConversations: () => Promise<ConversationSummary[]>;
   currentConversationId: string;
   messageIds: string[];
   onClose: () => void;
@@ -1325,9 +1377,14 @@ function ForwardSheet({
         </p>
         <ul className="mt-3 flex-1 overflow-y-auto grid gap-1.5 pb-2">
           {(list.data ?? [])
-            .filter((c) => c.id !== currentConversationId && c.other)
+            .filter((c) => c.id !== currentConversationId)
             .map((c) => {
-              const p = c.other!;
+              const title = c.kind === "group"
+                ? (c.title ?? "Group chat")
+                : (c.other?.display_name ?? c.other?.username ?? "Ghost");
+              const subtitle = c.kind === "group"
+                ? `${c.member_count} members`
+                : `@${c.other?.username ?? ""}`;
               const on = picked.has(c.id);
               return (
                 <li key={c.id}>
@@ -1346,19 +1403,19 @@ function ForwardSheet({
                     ].join(" ")}
                   >
                     <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/20 font-bold text-primary">
-                      {(p.display_name ?? p.username ?? "?").charAt(0).toUpperCase()}
+                      {title.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{p.display_name ?? p.username}</p>
-                      <p className="truncate text-[11px] text-muted-foreground">@{p.username ?? ""}</p>
+                      <p className="truncate text-sm font-semibold">{title}</p>
+                      <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>
                     </div>
                     {on && <Check className="h-4 w-4 text-primary" />}
                   </button>
                 </li>
               );
             })}
-          {list.data && list.data.filter((c) => c.id !== currentConversationId && c.other).length === 0 && (
-            <li className="py-8 text-center text-sm text-muted-foreground">No other chats yet.</li>
+          {list.data && list.data.filter((c) => c.id !== currentConversationId).length === 0 && (
+            <p className="py-8 text-center text-sm text-muted-foreground">No other conversations</p>
           )}
         </ul>
         <button
@@ -1379,5 +1436,350 @@ function Dot({ delay }: { delay: string }) {
       className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground"
       style={{ animationDelay: delay }}
     />
+  );
+}
+
+type GroupMember = ChatProfile & { role: GroupMemberRole };
+
+function GroupInfoSheet({
+  conversationId,
+  title: initialTitle,
+  created_by,
+  members,
+  myRole,
+  meId,
+  onClose,
+}: {
+  conversationId: string;
+  title: string;
+  created_by: string | null;
+  members: ChatProfile[];
+  myRole: GroupMemberRole;
+  meId: string | undefined;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const doAddMember = useServerFn(addGroupMember);
+  const doRemoveMember = useServerFn(removeGroupMember);
+  const doUpdateRole = useServerFn(updateGroupMemberRole);
+  const doUpdateTitle = useServerFn(updateGroupTitle);
+  const doLeave = useServerFn(leaveConversation);
+  const doFetchFriendships = useServerFn(listFriendships);
+
+  // Re-fetch the conversation to get roles (members from conv.data are ChatProfile only)
+  const conv = useQuery({
+    queryKey: ["conversation-detail", conversationId],
+    queryFn: () => doFetchFriendships(),
+    staleTime: 30_000,
+  });
+
+  // Use conv detail to get roles. Fall back to passed members if unavailable.
+  const convDetail = useQuery({
+    queryKey: ["conv", conversationId],
+    queryFn: async () => {
+      // Already cached from main page query
+      return null;
+    },
+    staleTime: Infinity,
+  });
+  void convDetail;
+
+  const [editTitle, setEditTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(initialTitle);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [addMode, setAddMode] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+
+  // Friends not already in group
+  const friendshipsData = conv.data;
+  const acceptedFriends = (friendshipsData?.friendships ?? []).filter(
+    (f) => f.status === "accepted"
+  );
+  const memberIds = new Set(members.map((m) => m.id));
+  const friendsMap = (friendshipsData?.profiles ?? {}) as Record<string, { display_name?: string | null; username?: string | null }>;
+  const addableFriends = acceptedFriends.filter((f) => {
+    const friendId = f.requester_id === meId ? f.addressee_id : f.requester_id;
+    return !memberIds.has(friendId);
+  });
+
+  const canManage = myRole === "owner" || myRole === "admin";
+
+  const saveTitle = async () => {
+    if (titleDraft.trim() === initialTitle) { setEditTitle(false); return; }
+    setLoading("title");
+    try {
+      await doUpdateTitle({ data: { conversation_id: conversationId, title: titleDraft.trim() } });
+      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      toast.success("Group name updated");
+      setEditTitle(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update title");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const removeMember = async (memberId: string) => {
+    setLoading(`remove-${memberId}`);
+    try {
+      await doRemoveMember({ data: { conversation_id: conversationId, member_id: memberId } });
+      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      toast.success("Member removed");
+      setConfirmRemove(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not remove member");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const changeRole = async (memberId: string, role: GroupMemberRole) => {
+    setLoading(`role-${memberId}`);
+    try {
+      await doUpdateRole({ data: { conversation_id: conversationId, member_id: memberId, role } });
+      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+      toast.success("Role updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update role");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const addFriend = async () => {
+    if (!picked) return;
+    setLoading("add");
+    try {
+      await doAddMember({ data: { conversation_id: conversationId, member_id: picked } });
+      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      toast.success("Member added");
+      setAddMode(false);
+      setPicked(null);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add member");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const leaveGroup = async () => {
+    setLoading("leave");
+    try {
+      await doLeave({ data: { conversation_id: conversationId } });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      toast.success("You left the group");
+      navigate({ to: "/chats" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not leave group");
+      setLoading(null);
+    }
+  };
+
+  const roleBadge = (role: GroupMemberRole) => {
+    if (role === "owner") return "Owner";
+    if (role === "admin") return "Admin";
+    return null;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 animate-fade-in" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="glass w-full max-w-md rounded-t-3xl border border-border p-4 shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold">Group Info</h3>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Title */}
+        <div className="mb-4">
+          {editTitle ? (
+            <div className="flex gap-2">
+              <input
+                autoFocus
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                maxLength={100}
+                className="flex-1 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditTitle(false); }}
+              />
+              <button
+                onClick={saveTitle}
+                disabled={loading === "title"}
+                className="grid h-10 w-10 place-items-center rounded-full bg-primary text-primary-foreground"
+              >
+                {loading === "title" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <p className="text-base font-bold">{titleDraft}</p>
+                <p className="text-[11px] text-muted-foreground">{members.length} member{members.length === 1 ? "" : "s"}</p>
+              </div>
+              {canManage && (
+                <button
+                  onClick={() => setEditTitle(true)}
+                  className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
+                  aria-label="Edit group name"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Add member panel */}
+        {canManage && (
+          <div className="mb-3">
+            {addMode ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Add a friend</p>
+                {addableFriends.length === 0 ? (
+                  <p className="py-2 text-center text-xs text-muted-foreground">All friends are already members</p>
+                ) : (
+                  <ul className="max-h-32 overflow-y-auto grid gap-1">
+                    {addableFriends.map((f) => {
+                      const friendId = f.requester_id === meId ? f.addressee_id : f.requester_id;
+                      const prof = friendsMap[friendId];
+                      const name = prof?.display_name ?? prof?.username ?? "Friend";
+                      return (
+                        <li key={f.id}>
+                          <button
+                            onClick={() => setPicked(friendId)}
+                            className={["flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition", picked === friendId ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-white/5"].join(" ")}
+                          >
+                            <div className="grid h-7 w-7 place-items-center rounded-full bg-primary/20 font-bold text-primary text-xs">{name.charAt(0).toUpperCase()}</div>
+                            {name}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => { setAddMode(false); setPicked(null); }} className="flex-1 h-9 rounded-full border border-border text-xs font-semibold hover:bg-white/5">Cancel</button>
+                  <button onClick={addFriend} disabled={!picked || loading === "add"} className="flex-1 h-9 rounded-full bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-40">
+                    {loading === "add" ? "Adding…" : "Add"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddMode(true)}
+                className="flex w-full items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary transition"
+              >
+                <UserPlus className="h-4 w-4" /> Add member
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Member list */}
+        <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Members</p>
+        <ul className="flex-1 overflow-y-auto grid gap-1 pb-2">
+          {members.map((m) => {
+            const badge = roleBadge(m.id === (created_by ?? "") ? "owner" : myRole === "owner" ? "member" : "member");
+            const name = m.display_name ?? m.username ?? "Ghost";
+            const isMe = m.id === meId;
+            const isLoading = loading === `remove-${m.id}` || loading === `role-${m.id}`;
+
+            return (
+              <li key={m.id} className="flex items-center gap-3 rounded-2xl px-3 py-2 hover:bg-white/5">
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/20 font-bold text-primary text-sm">
+                  {name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="truncate text-sm font-semibold">{name}{isMe && " (you)"}</p>
+                    {badge && <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">{badge}</span>}
+                  </div>
+                  {m.username && <p className="truncate text-[11px] text-muted-foreground">@{m.username}</p>}
+                </div>
+                {!isMe && myRole === "owner" && (
+                  <div className="flex items-center gap-1">
+                    {isLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => changeRole(m.id, "admin")}
+                          title="Promote to admin"
+                          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-primary"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => changeRole(m.id, "member")}
+                          title="Demote to member"
+                          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-primary"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setConfirmRemove(m.id)}
+                          title="Remove member"
+                          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+                {!isMe && myRole === "admin" && m.id !== created_by && (
+                  <button
+                    onClick={() => setConfirmRemove(m.id)}
+                    disabled={isLoading}
+                    title="Remove member"
+                    className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-destructive"
+                  >
+                    {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Confirm remove */}
+        {confirmRemove && (
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => setConfirmRemove(null)} className="flex-1 h-10 rounded-full border border-border text-sm font-semibold hover:bg-white/5">Cancel</button>
+            <button onClick={() => removeMember(confirmRemove)} disabled={loading === `remove-${confirmRemove}`} className="flex-1 h-10 rounded-full bg-destructive text-destructive-foreground text-sm font-semibold disabled:opacity-40">
+              {loading === `remove-${confirmRemove}` ? "Removing…" : "Remove"}
+            </button>
+          </div>
+        )}
+
+        {/* Leave group */}
+        {!confirmLeave ? (
+          <button
+            onClick={() => setConfirmLeave(true)}
+            className="mt-3 flex w-full items-center justify-center gap-2 h-11 rounded-full border border-destructive/40 text-destructive text-sm font-semibold hover:bg-destructive/10 transition"
+          >
+            <LogOut className="h-4 w-4" /> Leave group
+          </button>
+        ) : (
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => setConfirmLeave(false)} className="flex-1 h-10 rounded-full border border-border text-sm font-semibold hover:bg-white/5">Cancel</button>
+            <button onClick={leaveGroup} disabled={loading === "leave"} className="flex-1 h-10 rounded-full bg-destructive text-destructive-foreground text-sm font-semibold disabled:opacity-40">
+              {loading === "leave" ? "Leaving…" : "Leave"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,6 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireNotFrozen } from "@/lib/infra/write-gate";
+import type { AppSupabase } from "@/lib/infra/supabase/app-client";
+import { createApp } from "@/lib/infra/create-app";
+
+function app(context: { supabase: AppSupabase; userId: string }) {
+  return createApp(context);
+}
 
 const usernameSchema = z
   .string()
@@ -11,7 +18,7 @@ const usernameSchema = z
   .regex(/^[a-z0-9_]+$/, "Lowercase letters, numbers, underscore only");
 
 export const updateProfile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAuth, requireNotFrozen])
   .inputValidator((data: unknown) =>
     z
       .object({
@@ -22,48 +29,15 @@ export const updateProfile = createServerFn({ method: "POST" })
       })
       .parse(data),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const { data: row, error } = await supabase
-      .from("profiles")
-      .update({ ...data, updated_at: new Date().toISOString() })
-      .eq("id", userId)
-      .select()
-      .single();
-    if (error) {
-      if (error.code === "23505") throw new Error("Username is taken");
-      throw new Error(error.message);
-    }
-    return row;
-  });
+  .handler(async ({ data, context }) => app(context).profiles.updateMe(data));
 
 export const getMyProfile = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { supabase, userId } = context;
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    return data;
-  });
+  .handler(async ({ context }) => app(context).profiles.getMe());
 
 export const searchUsers = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) =>
     z.object({ query: z.string().trim().min(1).max(50) }).parse(data),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase, userId } = context;
-    const q = data.query.toLowerCase().replace(/[%_]/g, "\\$&");
-    const { data: rows, error } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url")
-      .or(`username.ilike.%${q}%,display_name.ilike.%${q}%`)
-      .neq("id", userId)
-      .limit(20);
-    if (error) throw new Error(error.message);
-    return rows ?? [];
-  });
+  .handler(async ({ data, context }) => app(context).profiles.searchUsers(data.query));

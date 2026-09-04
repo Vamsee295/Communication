@@ -1,37 +1,20 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireNotFrozen } from "@/lib/infra/write-gate";
+import type { AppSupabase } from "@/lib/infra/supabase/app-client";
+import { createApp } from "@/lib/infra/create-app";
+import type { Call, CallHistoryItem, CallPeer, CallStatus, CallType } from "@/lib/domain/types";
 
-export type CallType = "voice" | "video";
-export type CallStatus = "ringing" | "accepted" | "declined" | "missed" | "ended" | "failed";
+export type { CallType, CallStatus, CallPeer, CallHistoryItem };
+export type CallRow = Call;
 
-export type CallRow = {
-  id: string;
-  conversation_id: string;
-  caller_id: string;
-  callee_id: string;
-  call_type: CallType;
-  status: CallStatus;
-  started_at: string | null;
-  ended_at: string | null;
-  duration_seconds: number;
-  created_at: string;
-};
-
-export type CallPeer = {
-  id: string;
-  username: string | null;
-  display_name: string | null;
-  avatar_url: string | null;
-};
-
-export type CallHistoryItem = CallRow & {
-  direction: "incoming" | "outgoing";
-  peer: CallPeer | null;
-};
+function app(context: { supabase: AppSupabase; userId: string }) {
+  return createApp(context);
+}
 
 export const createCall = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAuth, requireNotFrozen])
   .inputValidator((data: unknown) =>
     z
       .object({
@@ -41,45 +24,15 @@ export const createCall = createServerFn({ method: "POST" })
       })
       .parse(data),
   )
-  .handler(async ({ data, context }): Promise<CallRow> => {
-    const { supabase, userId } = context;
-    const { data: row, error } = await supabase
-      .from("calls")
-      .insert({
-        conversation_id: data.conversation_id,
-        caller_id: userId,
-        callee_id: data.callee_id,
-        call_type: data.call_type,
-        status: "ringing",
-      })
-      .select("*")
-      .single();
-    if (error) throw new Error(error.message);
-    return row as CallRow;
-  });
+  .handler(async ({ data, context }): Promise<CallRow> => app(context).calls.create(data));
 
 export const getCall = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ call_id: z.string().uuid() }).parse(data))
-  .handler(async ({ data, context }): Promise<{ call: CallRow; peer: CallPeer | null } | null> => {
-    const { supabase, userId } = context;
-    const { data: row } = await supabase
-      .from("calls")
-      .select("*")
-      .eq("id", data.call_id)
-      .maybeSingle();
-    if (!row) return null;
-    const peerId = row.caller_id === userId ? row.callee_id : row.caller_id;
-    const { data: peer } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url")
-      .eq("id", peerId)
-      .maybeSingle();
-    return { call: row as CallRow, peer: (peer as CallPeer) ?? null };
-  });
+  .handler(async ({ data, context }) => app(context).calls.get(data.call_id));
 
 export const updateCallStatus = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAuth, requireNotFrozen])
   .inputValidator((data: unknown) =>
     z
       .object({
@@ -89,51 +42,10 @@ export const updateCallStatus = createServerFn({ method: "POST" })
       })
       .parse(data),
   )
-  .handler(async ({ data, context }) => {
-    const { supabase } = context;
-    const now = new Date().toISOString();
-    const patch = {
-      status: data.status,
-      ...(data.status === "accepted" ? { started_at: now } : {}),
-      ...(["ended", "declined", "missed", "failed"].includes(data.status)
-        ? { ended_at: now, ...(data.duration_seconds !== undefined ? { duration_seconds: data.duration_seconds } : {}) }
-        : {}),
-    };
-    const { error } = await supabase.from("calls").update(patch).eq("id", data.call_id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
+  .handler(async ({ data, context }) =>
+    app(context).calls.updateStatus(data.call_id, data.status, data.duration_seconds),
+  );
 
 export const listCalls = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<CallHistoryItem[]> => {
-    const { supabase, userId } = context;
-    const { data: rows, error } = await supabase
-      .from("calls")
-      .select("*")
-      .or(`caller_id.eq.${userId},callee_id.eq.${userId}`)
-      .order("created_at", { ascending: false })
-      .limit(100);
-    if (error) throw new Error(error.message);
-
-    const peerIds = Array.from(
-      new Set((rows ?? []).map((r) => (r.caller_id === userId ? r.callee_id : r.caller_id))),
-    );
-    const peers = new Map<string, CallPeer>();
-    if (peerIds.length > 0) {
-      const { data: profs } = await supabase
-        .from("profiles")
-        .select("id, username, display_name, avatar_url")
-        .in("id", peerIds);
-      for (const p of profs ?? []) peers.set(p.id, p as CallPeer);
-    }
-
-    return (rows ?? []).map((r) => {
-      const peerId = r.caller_id === userId ? r.callee_id : r.caller_id;
-      return {
-        ...(r as CallRow),
-        direction: r.caller_id === userId ? "outgoing" : "incoming",
-        peer: peers.get(peerId) ?? null,
-      };
-    });
-  });
+  .handler(async ({ context }): Promise<CallHistoryItem[]> => app(context).calls.listHistory());
