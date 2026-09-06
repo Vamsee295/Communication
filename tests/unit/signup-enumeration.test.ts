@@ -35,7 +35,7 @@ describe("Ghostline Signup Enumeration Protection & Error Sanitization", () => {
       consoleErrorSpy.mockRestore();
     });
 
-    it("maps generic/network/database errors to the identical generic message without leaking internals", () => {
+    it("maps database errors to the generic message without leaking internals", () => {
       const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const dbError = new Error("duplicate key value violates unique constraint auth_users_email_key");
 
@@ -45,6 +45,17 @@ describe("Ghostline Signup Enumeration Protection & Error Sanitization", () => {
       expect(result.message).toBe(GENERIC_SIGNUP_ERROR_MESSAGE);
       expect(result.message).not.toContain("violates unique constraint");
       expect(result.message).not.toContain("auth_users");
+      consoleErrorSpy.mockRestore();
+    });
+
+    it("maps network/connection errors to connection check message", () => {
+      const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const networkError = new TypeError("Failed to fetch");
+
+      const result = getSignupErrorMessage(networkError);
+
+      expect(result.title).toBe("Something went wrong");
+      expect(result.message).toBe("Please check your connection and try again.");
       consoleErrorSpy.mockRestore();
     });
   });

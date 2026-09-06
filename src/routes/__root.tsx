@@ -8,6 +8,7 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { useTheme } from "@/hooks/use-theme";
 import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
@@ -114,6 +115,12 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Applies persisted theme + accent on every mount to prevent a flash. */
+function ThemeBootstrap() {
+  useTheme();
+  return null;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const router = useRouter();
@@ -129,6 +136,7 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeBootstrap />
       <PresenceProvider>
         <CallProvider>
           <Outlet />

@@ -58,7 +58,7 @@ describe("E2EE-5 Privacy-Preserving Push Notifications", () => {
 
     // Payload verification: Generic Signal Push ONLY
     expect(payload.title).toBe("New message");
-    expect(payload.body).toBe("New encrypted message");
+    expect(payload.body).toBe("New message in Ghostline");
     expect(payload.notificationId).toBe("evt-999");
 
     // SERVER BLINDNESS PROOF: 0% exposure of secret, plaintext body, sender, or conversation UUID in push payload

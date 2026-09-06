@@ -309,3 +309,164 @@
   from { background-position: 200% 0; }
   to { background-position: -200% 0; }
 }
+
+/* ── Accent colour overrides ───────────────────────────── */
+/* Default (blue) — already defined in :root, no override needed */
+
+[data-accent="red"] {
+  --primary: #E53E3E;
+  --primary-deep: #C53030;
+  --primary-soft: #FFF5F5;
+  --primary-very-soft: #FFFAFA;
+  --primary-foreground: #FFFFFF;
+  --ring: #E53E3E;
+  --glow: rgba(229, 62, 62, 0.20);
+  --secondary: #FFF5F5;
+  --accent: #FFF5F5;
+  --accent-foreground: #E53E3E;
+  --sidebar-primary: #E53E3E;
+  --sidebar-accent: #FFF5F5;
+  --sidebar-accent-foreground: #E53E3E;
+  --sidebar-ring: #E53E3E;
+}
+
+[data-accent="green"] {
+  --primary: #16A34A;
+  --primary-deep: #15803D;
+  --primary-soft: #F0FDF4;
+  --primary-very-soft: #F7FFF9;
+  --primary-foreground: #FFFFFF;
+  --ring: #16A34A;
+  --glow: rgba(22, 163, 74, 0.20);
+  --secondary: #F0FDF4;
+  --accent: #F0FDF4;
+  --accent-foreground: #16A34A;
+  --sidebar-primary: #16A34A;
+  --sidebar-accent: #F0FDF4;
+  --sidebar-accent-foreground: #16A34A;
+  --sidebar-ring: #16A34A;
+}
+
+[data-accent="yellow"] {
+  --primary: #D97706;
+  --primary-deep: #B45309;
+  --primary-soft: #FFFBEB;
+  --primary-very-soft: #FEFCE8;
+  --primary-foreground: #FFFFFF;
+  --ring: #D97706;
+  --glow: rgba(217, 119, 6, 0.20);
+  --secondary: #FFFBEB;
+  --accent: #FFFBEB;
+  --accent-foreground: #D97706;
+  --sidebar-primary: #D97706;
+  --sidebar-accent: #FFFBEB;
+  --sidebar-accent-foreground: #D97706;
+  --sidebar-ring: #D97706;
+}
+
+[data-accent="pink"] {
+  --primary: #DB2777;
+  --primary-deep: #BE185D;
+  --primary-soft: #FDF2F8;
+  --primary-very-soft: #FFF5F9;
+  --primary-foreground: #FFFFFF;
+  --ring: #DB2777;
+  --glow: rgba(219, 39, 119, 0.20);
+  --secondary: #FDF2F8;
+  --accent: #FDF2F8;
+  --accent-foreground: #DB2777;
+  --sidebar-primary: #DB2777;
+  --sidebar-accent: #FDF2F8;
+  --sidebar-accent-foreground: #DB2777;
+  --sidebar-ring: #DB2777;
+}
+
+[data-accent="purple"] {
+  --primary: #7C3AED;
+  --primary-deep: #6D28D9;
+  --primary-soft: #F5F3FF;
+  --primary-very-soft: #FAF8FF;
+  --primary-foreground: #FFFFFF;
+  --ring: #7C3AED;
+  --glow: rgba(124, 58, 237, 0.20);
+  --secondary: #F5F3FF;
+  --accent: #F5F3FF;
+  --accent-foreground: #7C3AED;
+  --sidebar-primary: #7C3AED;
+  --sidebar-accent: #F5F3FF;
+  --sidebar-accent-foreground: #7C3AED;
+  --sidebar-ring: #7C3AED;
+}
+
+[data-accent="grey"] {
+  --primary: #475569;
+  --primary-deep: #334155;
+  --primary-soft: #F1F5F9;
+  --primary-very-soft: #F8FAFC;
+  --primary-foreground: #FFFFFF;
+  --ring: #475569;
+  --glow: rgba(71, 85, 105, 0.20);
+  --secondary: #F1F5F9;
+  --accent: #F1F5F9;
+  --accent-foreground: #475569;
+  --sidebar-primary: #475569;
+  --sidebar-accent: #F1F5F9;
+  --sidebar-accent-foreground: #475569;
+  --sidebar-ring: #475569;
+}
+
+/* ── Blue / Dim theme ──────────────────────────────────── */
+/* A comfortable navy-tinted dark environment */
+[data-theme="blue-dim"] {
+  --background: #0D1524;
+  --foreground: #E2EEFF;
+  --card: #111C2F;
+  --surface: #111C2F;
+  --surface-2: #172237;
+  --card-foreground: #E2EEFF;
+  --popover: #111C2F;
+  --popover-foreground: #E2EEFF;
+  --primary: #4DA3F7;
+  --primary-foreground: #ffffff;
+  --secondary: #172237;
+  --secondary-foreground: #E2EEFF;
+  --muted: #131E33;
+  --muted-foreground: #7A96BC;
+  --accent: #172237;
+  --accent-foreground: #4DA3F7;
+  --destructive: #f2555a;
+  --destructive-foreground: #ffffff;
+  --success: #34d399;
+  --border: rgba(77, 163, 247, 0.12);
+  --border-strong: rgba(77, 163, 247, 0.22);
+  --input: rgba(77, 163, 247, 0.12);
+  --ring: #4DA3F7;
+  --glow: rgba(77, 163, 247, 0.28);
+  --sidebar: #09101C;
+  --sidebar-foreground: #E2EEFF;
+  --sidebar-primary: #4DA3F7;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #172237;
+  --sidebar-accent-foreground: #E2EEFF;
+  --sidebar-border: rgba(77, 163, 247, 0.10);
+  --sidebar-ring: #4DA3F7;
+}
+
+
+/* == Vanish Mode Animations ================================================= */
+
+@keyframes vanish-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-vanish-arrive {
+  animation: vanish-arrive 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+

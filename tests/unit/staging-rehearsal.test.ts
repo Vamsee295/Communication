@@ -265,6 +265,7 @@ describe("Phase 4.5 Neon + WebSocket End-to-End Staging Rehearsal", () => {
       search: async () => [],
       getChatProfiles: async (ids) => ids.map((id) => ({ id, username: `user_${id.slice(0, 4)}`, display_name: `User ${id.slice(0, 4)}`, avatar_url: null, last_seen: null })),
       getCallPeer: async (id) => ({ id, username: `user_${id.slice(0, 4)}`, display_name: `User ${id.slice(0, 4)}`, avatar_url: null }),
+      checkUsernameAvailability: async () => true,
     };
 
     const deviceRepo: DeviceRepository = {

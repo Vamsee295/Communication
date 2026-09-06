@@ -20,4 +20,8 @@ export class ProfileService {
     if (!query.trim()) throw new ValidationError("Query is required");
     return this.profiles.search(query, this.userId);
   }
+
+  checkUsernameAvailability(username: string): Promise<boolean> {
+    return this.profiles.checkUsernameAvailability(username);
+  }
 }

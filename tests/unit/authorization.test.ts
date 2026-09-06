@@ -290,6 +290,7 @@ describe("Phase 3 Multi-User Authorization & IDOR Protections", () => {
         display_name: `User ${id.slice(0, 4)}`,
         avatar_url: null,
       }),
+      checkUsernameAvailability: async () => true,
     };
 
     const deviceRepo: DeviceRepository = {

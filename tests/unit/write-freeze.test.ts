@@ -516,6 +516,7 @@ function buildMinimalRepositories(): Repositories {
       display_name: `User ${id.slice(0, 4)}`,
       avatar_url: null,
     }),
+    checkUsernameAvailability: async () => true,
   };
 
   const deviceRepo: DeviceRepository = {

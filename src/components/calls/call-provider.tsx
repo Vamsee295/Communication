@@ -323,6 +323,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       type: CallType;
     }) => {
       if (activeRef.current || !myId) return;
+      if (peerId === myId) return;
       setError(null);
       try {
         const stream = await getMedia(type);
@@ -376,38 +377,49 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (!incoming || !myId) return;
     stopRingtone();
     const p = incoming.payload;
+    const type = p.call_type ?? "voice";
     setError(null);
-    try {
-      const type = p.call_type ?? "voice";
-      const stream = await getMedia(type);
-      const call: ActiveCall = {
-        id: p.call_id,
-        conversationId: p.conversation_id ?? "",
-        peerId: p.from,
-        peer: p.peer ?? null,
-        type,
-        outgoing: false,
-      };
-      setActive(call);
-      activeRef.current = call;
-      setIncoming(null);
-      setState("CONNECTING");
 
+    const call: ActiveCall = {
+      id: p.call_id,
+      conversationId: p.conversation_id ?? "",
+      peerId: p.from,
+      peer: p.peer ?? null,
+      type,
+      outgoing: false,
+    };
+
+    setActive(call);
+    activeRef.current = call;
+    setIncoming(null);
+    setState("CONNECTING");
+
+    try {
+      const stream = await getMedia(type);
       const pc = buildPeerConnection(p.from, p.call_id);
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-      await pc.setRemoteDescription(new RTCSessionDescription(incoming.offer));
-      for (const c of pendingCandidates.current) {
+
+      const offerInit: RTCSessionDescriptionInit =
+        typeof incoming.offer === "string"
+          ? { type: "offer", sdp: incoming.offer }
+          : incoming.offer;
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offerInit));
+
+      const candidatesToProcess = [...pendingCandidates.current];
+      pendingCandidates.current = [];
+      for (const c of candidatesToProcess) {
         await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
       }
-      pendingCandidates.current = [];
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+
       await sendSignal(p.from, "call-answer", { call_id: p.call_id, from: myId, sdp: answer });
       await updateCallStatus({ data: { call_id: p.call_id, status: "accepted" } }).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not answer the call");
       teardown();
-      setIncoming(null);
       setState("FAILED");
       setTimeout(() => {
         setState("IDLE");
@@ -421,9 +433,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
     stopRingtone();
     const p = incoming.payload;
     setIncoming(null);
+    setState("DECLINED");
     pendingCandidates.current = [];
+
     await sendSignal(p.from, "call-decline", { call_id: p.call_id, from: myId });
     await updateCallStatus({ data: { call_id: p.call_id, status: "declined" } }).catch(() => {});
+
+    setTimeout(() => {
+      setState("IDLE");
+      setActive(null);
+    }, 1400);
   }, [incoming, myId, sendSignal, stopRingtone]);
 
   /* ------------------------- inbound signal wiring ---------------------- */
@@ -432,7 +451,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
     const unsubscribe = signalingRef.current.listen(myId, {
       onOffer: (p) => {
-        if (!p?.sdp) return;
+        if (!p?.sdp || p.from === myId) return;
         if (activeRef.current || incoming) {
           void sendSignal(p.from, "call-decline", { call_id: p.call_id, from: myId });
           void updateCallStatus({ data: { call_id: p.call_id, status: "missed" } }).catch(() => {});
@@ -444,14 +463,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
       },
       onAnswer: async (p) => {
         const pc = pcRef.current;
-        if (!pc || !p?.sdp || activeRef.current?.id !== p.call_id) return;
+        if (!pc || !p?.sdp || activeRef.current?.id !== p.call_id || p.from !== activeRef.current?.peerId) return;
         if (ringTimer.current) clearTimeout(ringTimer.current);
         setState("CONNECTING");
-        await pc.setRemoteDescription(new RTCSessionDescription(p.sdp)).catch(() => {});
-        for (const c of pendingCandidates.current) {
+        const answerInit: RTCSessionDescriptionInit =
+          typeof p.sdp === "string"
+            ? { type: "answer", sdp: p.sdp }
+            : p.sdp;
+        await pc.setRemoteDescription(new RTCSessionDescription(answerInit)).catch(() => {});
+        const candidatesToProcess = [...pendingCandidates.current];
+        pendingCandidates.current = [];
+        for (const c of candidatesToProcess) {
           await pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
         }
-        pendingCandidates.current = [];
       },
       onIce: async (p) => {
         if (!p?.candidate) return;
@@ -463,18 +487,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
       },
       onDecline: (p) => {
-        if (activeRef.current?.id !== p.call_id) return;
+        if (activeRef.current?.id !== p.call_id || p.from !== activeRef.current?.peerId) return;
         setError("Call declined");
         finish("DECLINED", false);
       },
       onEnd: (p) => {
-        if (incoming?.payload.call_id === p.call_id) {
+        if (incoming?.payload.call_id === p.call_id && p.from === incoming.payload.from) {
           stopRingtone();
           setIncoming(null);
           setState("IDLE");
           return;
         }
-        if (activeRef.current?.id !== p.call_id) return;
+        if (activeRef.current?.id !== p.call_id || p.from !== activeRef.current?.peerId) return;
         const duration = startedAt.current
           ? Math.round((Date.now() - startedAt.current) / 1000)
           : 0;

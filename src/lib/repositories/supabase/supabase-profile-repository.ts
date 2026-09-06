@@ -58,4 +58,19 @@ export class SupabaseProfileRepository implements ProfileRepository {
     if (error) mapInfraError(error);
     return data ?? null;
   }
+
+  async checkUsernameAvailability(username: string): Promise<boolean> {
+    const normalized = username.replace(/^@/, '').trim().toLowerCase();
+    if (!normalized) return false;
+
+    const { data, error } = await this.supabase
+      .from("profiles")
+      .select("id")
+      .eq("username", normalized)
+      .limit(1)
+      .maybeSingle();
+      
+    if (error) mapInfraError(error);
+    return data === null;
+  }
 }

@@ -1,11 +1,12 @@
 const KEY = "ghostline.device_key";
 
-export function getDeviceKey(): string {
+export function getDeviceKey(userId?: string): string {
   if (typeof window === "undefined") return "ssr";
-  let key = localStorage.getItem(KEY);
+  const actualKey = userId ? `${KEY}.${userId}` : KEY;
+  let key = localStorage.getItem(actualKey);
   if (!key) {
     key = crypto.randomUUID();
-    localStorage.setItem(KEY, key);
+    localStorage.setItem(actualKey, key);
   }
   return key;
 }

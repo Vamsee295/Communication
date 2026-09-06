@@ -210,7 +210,7 @@ export class MessageService {
     const now = new Date().toISOString();
     const ids = await this.messages.listIdsCreatedAtLte(conversationId, upToCreatedAt);
     await this.messages.markReceiptsRead(this.userId, ids, now);
-    await this.conversations.updateLastRead(this.userId, conversationId, upToCreatedAt);
+    await this.conversations.updateLastRead(this.userId, conversationId, now);
     return { ok: true };
   }
 

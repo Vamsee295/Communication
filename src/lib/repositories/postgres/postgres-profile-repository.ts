@@ -52,7 +52,11 @@ export class PostgresProfileRepository implements ProfileRepository {
   }
 
   async search(query: string, excludeId: string): Promise<FriendProfile[]> {
-    const needle = `%${query.toLowerCase()}%`;
+    // Normalize query by removing leading @ and trimming
+    const normalizedQuery = query.replace(/^@/, '').trim();
+    if (!normalizedQuery) return [];
+    
+    const needle = `%${normalizedQuery.toLowerCase()}%`;
     const rows = await this.db<FriendProfile[]>`
       SELECT id, username, display_name, avatar_url
         FROM public.profiles
@@ -81,5 +85,15 @@ export class PostgresProfileRepository implements ProfileRepository {
        LIMIT 1;
     `;
     return rows[0] ?? null;
+  }
+
+  async checkUsernameAvailability(username: string): Promise<boolean> {
+    const normalized = username.replace(/^@/, '').trim().toLowerCase();
+    if (!normalized) return false;
+
+    const rows = await this.db<{ id: string }[]>`
+      SELECT id FROM public.profiles WHERE LOWER(username) = ${normalized} LIMIT 1;
+    `;
+    return rows.length === 0;
   }
 }

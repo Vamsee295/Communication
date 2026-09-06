@@ -39,4 +39,8 @@ Agentic Coding/
 # Rules And Skills
 .agents/
 
-
+# Scratch & temporary workspace files
+scratch/
+*.pem
+*.key
+credentials.json

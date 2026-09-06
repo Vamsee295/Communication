@@ -34,6 +34,7 @@ import {
   markConversationUnread,
   leaveConversation,
   blockContact,
+  markRead,
   type ConversationSummary,
 } from "@/lib/chat.functions";
 import { listFriendships, type FriendshipRow } from "@/lib/friendships.functions";
@@ -73,6 +74,7 @@ function ChatsPage() {
   const doUnread = useServerFn(markConversationUnread);
   const doLeave = useServerFn(leaveConversation);
   const doBlock = useServerFn(blockContact);
+  const doMarkRead = useServerFn(markRead);
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { onlineIds } = usePresence();
@@ -105,6 +107,7 @@ function ChatsPage() {
     queryKey: ["conversations"],
     queryFn: () => fetchConversations(),
     enabled: !!profile.data?.username,
+    refetchInterval: 3000,
   });
 
   // Realtime: any message insert refreshes conversation list
@@ -198,7 +201,16 @@ function ChatsPage() {
       online={!!c.other?.id && onlineIds.has(c.other.id)}
       menuOpen={menuFor === c.id}
       onOpenMenu={(open) => setMenuFor(open ? c.id : null)}
-      onOpen={() => navigate({ to: "/chats/$conversationId", params: { conversationId: c.id } })}
+      onOpen={() => {
+        qc.setQueryData<ConversationSummary[]>(["conversations"], (old) => {
+          if (!old) return old;
+          return old.map((conv) => (conv.id === c.id ? { ...conv, unread: 0 } : conv));
+        });
+        doMarkRead({ data: { conversation_id: c.id, up_to_created_at: new Date().toISOString() } })
+          .then(() => qc.invalidateQueries({ queryKey: ["conversations"] }))
+          .catch(() => {});
+        navigate({ to: "/chats/$conversationId", params: { conversationId: c.id } });
+      }}
       onUnread={() => unread.mutate(c.id)}
       onPin={() => flags.mutate({ conversation_id: c.id, pinned: !c.pinned })}
       onMute={() => flags.mutate({ conversation_id: c.id, muted: !c.muted })}
@@ -546,8 +558,12 @@ function ChatRow({
               {last ? preview : status}
             </p>
             {c.unread > 0 && (
-              <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white">
-                {c.unread}
+              <span
+                title={c.unread > 9 ? "9+ new messages" : `${c.unread} new messages`}
+                aria-label={c.unread > 9 ? "9+ new messages" : `${c.unread} new messages`}
+                className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white shadow-sm"
+              >
+                {c.unread > 9 ? "9+" : c.unread}
               </span>
             )}
           </div>

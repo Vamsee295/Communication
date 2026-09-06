@@ -4,6 +4,12 @@ import { Loader2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { authService } from "@/lib/auth/session";
+import {
+  getSignupErrorMessage,
+  isDuplicateUserSignup,
+  getSigninErrorMessage,
+  DUPLICATE_SIGNUP_ERROR,
+} from "@/lib/auth/auth-error";
 import { GhostMark } from "@/components/app-shell";
 
 const searchSchema = z.object({
@@ -15,18 +21,15 @@ export const Route = createFileRoute("/auth")({
   component: AuthPage,
 });
 
-const schema = z.object({
-  email: z.string().trim().email("Enter a valid email").max(255),
-  password: z.string().min(8, "At least 8 characters").max(72),
-});
-
 function AuthPage() {
   const search = Route.useSearch();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">(search.mode ?? "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -38,29 +41,85 @@ function AuthPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = schema.safeParse({ email, password });
-    if (!parsed.success) {
-      toast.error(parsed.error.issues[0]?.message ?? "Invalid input");
+
+    const trimmedEmail = email.trim();
+
+    // Client-side email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmedEmail || !emailRegex.test(trimmedEmail)) {
+      toast.error("Enter a valid email address.");
       return;
     }
+
+    // Client-side password validation
+    if (!password || password.length < 8) {
+      toast.error("Password does not meet the required requirements.");
+      return;
+    }
+
+    // Client-side password confirmation on signup
+    if (mode === "signup" && password !== confirmPassword) {
+      toast.error("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === "signup") {
-        const { error } = await authService.signUpWithPassword(
-          parsed.data.email,
-          parsed.data.password,
+        const { data, error } = await authService.signUpWithPassword(
+          trimmedEmail,
+          password,
           window.location.origin,
         );
-        if (error) throw error;
-        toast.success("Welcome to Ghostline");
+
+        // 1. Server returned an error (network error, auth error, provider rejection)
+        if (error) {
+          const errInfo = getSignupErrorMessage(error);
+          toast.error(errInfo.title, {
+            description: errInfo.message,
+          });
+          return;
+        }
+
+        // 2. Duplicate user check under Supabase email enumeration prevention
+        // (Supabase returns a user with empty identities: [] or missing user when email exists)
+        if (!data?.user || isDuplicateUserSignup(data)) {
+          toast.error(DUPLICATE_SIGNUP_ERROR.title, {
+            description: DUPLICATE_SIGNUP_ERROR.message,
+          });
+          return;
+        }
+
+        // 3. Email verification state (when project has email confirmation enabled, session is null)
+        if (!data.session) {
+          toast.success("Account created", {
+            description: "Check your email to verify your account.",
+          });
+          navigate({
+            to: "/auth/verify-email",
+            search: { email: trimmedEmail } as never,
+          });
+          return;
+        }
+
+        // 4. Genuine success with active session (auto-confirmed or confirmation disabled)
+        toast.success("Account created");
+        navigate({ to: "/chats", replace: true });
       } else {
-        const { error } = await authService.signInWithPassword(parsed.data.email, parsed.data.password);
-        if (error) throw error;
+        const { error } = await authService.signInWithPassword(trimmedEmail, password);
+        if (error) {
+          const msg = getSigninErrorMessage(error);
+          toast.error(msg);
+          return;
+        }
+        navigate({ to: "/chats", replace: true });
       }
-      navigate({ to: "/chats", replace: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Auth failed";
-      toast.error(msg.includes("Invalid login") ? "Wrong email or password" : msg);
+      console.error("[auth submit exception]", err);
+      const errInfo = getSignupErrorMessage(err);
+      toast.error(errInfo.title, {
+        description: errInfo.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -111,7 +170,7 @@ function AuthPage() {
           {/* Google */}
           <button
             onClick={handleGoogle}
-            disabled={googleLoading}
+            disabled={googleLoading || loading}
             className="flex w-full h-11 items-center justify-center gap-3 rounded-xl border border-border bg-white text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60"
           >
             {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
@@ -162,6 +221,31 @@ function AuthPage() {
               </button>
             </div>
 
+            {/* Confirm Password (signup only) */}
+            {mode === "signup" && (
+              <div className="focus-ring flex items-center rounded-xl border border-border bg-white transition">
+                <input
+                  id="auth-confirm-password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  placeholder="Repeat your password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="h-11 flex-1 rounded-xl bg-transparent px-4 text-sm outline-none placeholder:text-muted-foreground"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  className="pr-3 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
+                  aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            )}
+
             {mode === "signin" && (
               <div className="text-right">
                 <span className="text-xs text-muted-foreground hover:text-foreground cursor-pointer">Forgot Password?</span>
@@ -175,7 +259,10 @@ function AuthPage() {
               className="mt-1 flex h-11 w-full items-center justify-center rounded-xl bg-primary text-sm font-bold text-white shadow-md shadow-primary/25 transition hover:bg-[#1467D8] active:scale-[0.98] disabled:opacity-60"
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {mode === "signup" ? "Creating account..." : "Signing in..."}
+                </span>
               ) : mode === "signup" ? (
                 "Create account"
               ) : (
@@ -188,7 +275,10 @@ function AuthPage() {
             <button
               id="auth-toggle-mode"
               type="button"
-              onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
+              onClick={() => {
+                setMode(mode === "signup" ? "signin" : "signup");
+                setConfirmPassword("");
+              }}
               className="text-sm text-muted-foreground hover:text-foreground transition"
             >
               {mode === "signup" ? (

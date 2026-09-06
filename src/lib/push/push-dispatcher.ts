@@ -59,7 +59,6 @@ export class PushDispatcher implements PostCommitConsumer {
       const payload: WebPushNotificationPayload = {
         title: "New message",
         body: "New message in Ghostline",
-        conversationId: conversation_id,
         notificationId: event_id,
       };
 

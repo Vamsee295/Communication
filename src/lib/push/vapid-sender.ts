@@ -295,7 +295,6 @@ export async function encryptWebPushPayload(
 export type WebPushNotificationPayload = {
   title: string;
   body: string;
-  conversationId: string;
   notificationId: string;
 };
 

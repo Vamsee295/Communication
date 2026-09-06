@@ -1,22 +1,40 @@
 /** ICE configuration. STUN/TURN come from env so infrastructure is never hard-coded. */
 export function getIceServers(): RTCIceServer[] {
-  const env = import.meta.env as Record<string, string | undefined>;
-  const stun = env['VITE_STUN_SERVER_URL'] || "stun:stun.l.google.com:19302";
-  const servers: RTCIceServer[] = [{ urls: stun.split(",").map((s) => s.trim()) }];
+  const stunEnv = import.meta.env.VITE_STUN_SERVER_URL;
+  const stunUrls = stunEnv 
+    ? stunEnv.split(",").map((s: string) => s.trim()).filter(Boolean)
+    : [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun.cloudflare.com:3478"
+      ];
 
-  const turnUrl = env['VITE_TURN_URL'];
-  if (turnUrl) {
-    servers.push({
-      urls: turnUrl.split(",").map((s) => s.trim()),
-      username: env['VITE_TURN_USERNAME'] ?? "",
-      credential: env['VITE_TURN_CREDENTIAL'] ?? "",
-    });
+  const servers: RTCIceServer[] = [{ urls: stunUrls }];
+
+  const turnEnv = import.meta.env.VITE_TURN_URL;
+  if (turnEnv) {
+    const turnUrls = turnEnv.split(",").map((s: string) => s.trim()).filter(Boolean);
+    if (turnUrls.length > 0) {
+      servers.push({
+        urls: turnUrls,
+        username: import.meta.env.VITE_TURN_USERNAME ?? "",
+        credential: import.meta.env.VITE_TURN_CREDENTIAL ?? "",
+      });
+    }
   }
   return servers;
 }
 
 export function rtcConfig(): RTCConfiguration {
-  return { iceServers: getIceServers(), iceCandidatePoolSize: 4 };
+  return { 
+    iceServers: getIceServers(), 
+    iceCandidatePoolSize: 4 
+  };
+}
+
+export function isRelayCandidate(candidate: RTCIceCandidate | string): boolean {
+  const candStr = typeof candidate === "string" ? candidate : candidate.candidate;
+  return candStr.toLowerCase().includes("typ relay");
 }
 
 export function formatDuration(totalSeconds: number): string {

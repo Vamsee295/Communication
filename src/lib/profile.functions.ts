@@ -41,3 +41,10 @@ export const searchUsers = createServerFn({ method: "POST" })
     z.object({ query: z.string().trim().min(1).max(50) }).parse(data),
   )
   .handler(async ({ data, context }) => app(context).profiles.searchUsers(data.query));
+
+export const checkUsernameAvailability = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ username: z.string().trim().min(1).max(50) }).parse(data),
+  )
+  .handler(async ({ data, context }) => app(context).profiles.checkUsernameAvailability(data.username));

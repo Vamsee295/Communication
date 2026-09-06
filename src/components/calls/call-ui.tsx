@@ -8,12 +8,22 @@ function peerName(peer: CallPeer | null) {
 }
 
 function Avatar({ peer, size = "lg" }: { peer: CallPeer | null; size?: "lg" | "md" }) {
-  const cls = size === "lg" ? "h-28 w-28 text-4xl" : "h-16 w-16 text-2xl";
+  const cls = size === "lg" ? "h-28 w-28 text-4xl" : "h-18 w-18 text-2xl";
+  const name = peerName(peer);
+  if (peer?.avatar_url) {
+    return (
+      <img
+        src={peer.avatar_url}
+        alt={name}
+        className={`${cls} rounded-full object-cover ring-4 ring-white/80 shadow-md`}
+      />
+    );
+  }
   return (
     <div
-      className={`grid ${cls} place-items-center rounded-full bg-primary/12 font-black text-primary ring-1 ring-primary/25`}
+      className={`grid ${cls} place-items-center rounded-full bg-gradient-to-br from-[#2587F5] to-[#1467D8] font-black text-white shadow-lg shadow-primary/25 ring-4 ring-white/80`}
     >
-      {peerName(peer).charAt(0).toUpperCase()}
+      {name.charAt(0).toUpperCase()}
     </div>
   );
 }
@@ -38,32 +48,62 @@ export function IncomingCallDialog({
   }, [onDecline]);
 
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-end bg-black/40 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:place-items-center">
-      <div className="glass animate-rise-in w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl">
-        <div className="flex justify-center">
-          <Avatar peer={peer} size="md" />
+    <div 
+      className="fixed inset-0 z-[100] grid place-items-center bg-[#0B1B33]/40 p-4 backdrop-blur-md"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="incoming-call-title"
+    >
+      <div className="animate-rise-in w-full max-w-sm rounded-[28px] border border-white/80 bg-white/95 p-7 text-center shadow-[0_25px_60px_-15px_rgba(20,103,216,0.2),0_0_0_1px_rgba(220,232,245,0.7)] backdrop-blur-2xl">
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
+          <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+          Incoming {type === "video" ? "Video" : "Voice"} Call
         </div>
-        <h2 className="mt-4 text-xl font-extrabold">{peerName(peer)}</h2>
+
+        {/* Pulsing Avatar */}
+        <div className="relative mx-auto my-5 flex h-24 w-24 items-center justify-center">
+          <span className="absolute inset-0 rounded-full bg-primary/20 animate-ping opacity-60" />
+          <span className="absolute -inset-2 rounded-full bg-primary/10 animate-pulse" />
+          <div className="relative">
+            <Avatar peer={peer} size="md" />
+          </div>
+        </div>
+
+        <h2 id="incoming-call-title" className="text-2xl font-extrabold tracking-tight text-[#0B1B33]">
+          {peerName(peer)}
+        </h2>
         {peer?.username && (
-          <p className="mt-0.5 text-[12px] text-muted-foreground">@{peer.username}</p>
+          <p className="mt-0.5 text-[13px] font-medium text-[#64748B]">@{peer.username}</p>
         )}
-        <p className="mt-1 text-sm text-primary">
-          Incoming {type === "video" ? "video" : "voice"} call
+        <p className="mt-2 text-sm font-semibold text-primary animate-pulse">
+          is calling you...
         </p>
-        <div className="mt-7 flex items-center justify-center gap-8 sm:gap-5">
+
+        <div className="mt-8 flex items-center justify-center gap-8">
           <button
             onClick={onDecline}
-            className="press grid h-[68px] w-[68px] place-items-center rounded-full bg-destructive text-destructive-foreground sm:h-14 sm:w-14"
-            aria-label="Decline"
+            className="group flex flex-col items-center gap-2 rounded-2xl p-1 outline-none focus-visible:ring-2 focus-visible:ring-red-500/50 cursor-pointer"
+            aria-label="Decline call"
           >
-            <PhoneOff className="h-6 w-6 sm:h-5 sm:w-5" />
+            <div className="press grid h-16 w-16 place-items-center rounded-full bg-[#EF4444] text-white shadow-lg shadow-red-500/30 transition-all group-hover:bg-[#DC2626] group-hover:scale-105 active:scale-95">
+              <PhoneOff className="h-6 w-6" />
+            </div>
+            <span className="text-xs font-semibold text-[#64748B] group-hover:text-[#EF4444] transition-colors">
+              Decline
+            </span>
           </button>
+
           <button
             onClick={onAccept}
-            className="press grid h-[68px] w-[68px] place-items-center rounded-full bg-success text-[#05060a] sm:h-14 sm:w-14"
-            aria-label="Accept"
+            className="group flex flex-col items-center gap-2 rounded-2xl p-1 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 cursor-pointer"
+            aria-label="Accept call"
           >
-            {type === "video" ? <Video className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
+            <div className="press grid h-16 w-16 place-items-center rounded-full bg-[#10B981] text-white shadow-lg shadow-emerald-500/30 transition-all group-hover:bg-[#059669] group-hover:scale-105 active:scale-95">
+              {type === "video" ? <Video className="h-6 w-6" /> : <Phone className="h-6 w-6" />}
+            </div>
+            <span className="text-xs font-semibold text-[#64748B] group-hover:text-[#10B981] transition-colors">
+              Accept
+            </span>
           </button>
         </div>
       </div>
@@ -94,62 +134,21 @@ function stateLabel(state: string, seconds: number, name: string, error: string 
   }
 }
 
-function PermissionHint({ error }: { error: string | null }) {
+function PermissionHint({ error, isVideo }: { error: string | null; isVideo: boolean }) {
   if (!error) return null;
   const isPermission = /access is required|access your/i.test(error);
   if (!isPermission) return null;
   return (
-    <p className="mx-auto max-w-xs rounded-2xl border border-border bg-black/50 px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
-      {error} Enable it for this site in your browser settings, then try the call again.
+    <p
+      className={[
+        "mx-auto mt-4 max-w-xs rounded-2xl px-4 py-3 text-[12px] leading-relaxed",
+        isVideo
+          ? "border border-white/20 bg-black/70 text-slate-300"
+          : "border border-red-200 bg-red-50 text-red-700",
+      ].join(" ")}
+    >
+      {error} Enable microphone/camera in your browser settings and try again.
     </p>
-  );
-}
-
-function Controls({
-  type,
-  muted,
-  cameraOff,
-  onToggleMute,
-  onToggleCamera,
-  onHangUp,
-}: {
-  type: CallType;
-  muted: boolean;
-  cameraOff: boolean;
-  onToggleMute: () => void;
-  onToggleCamera: () => void;
-  onHangUp: () => void;
-}) {
-  const base =
-    "press grid h-16 w-16 place-items-center rounded-full border border-border bg-surface-2/80 text-foreground sm:h-14 sm:w-14";
-  return (
-    <div className="flex items-center justify-center gap-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:gap-4">
-      <button onClick={onToggleMute} className={base} aria-label={muted ? "Unmute" : "Mute"}>
-        {muted ? <MicOff className="h-5 w-5 text-destructive" /> : <Mic className="h-5 w-5" />}
-      </button>
-      <button
-        onClick={onHangUp}
-        className="press grid h-[72px] w-[72px] place-items-center rounded-full bg-destructive text-destructive-foreground shadow-lg sm:h-16 sm:w-16"
-        aria-label="End call"
-      >
-        <PhoneOff className="h-6 w-6" />
-      </button>
-      {type === "video" ? (
-        <button
-          onClick={onToggleCamera}
-          className={base}
-          aria-label={cameraOff ? "Turn camera on" : "Turn camera off"}
-        >
-          {cameraOff ? (
-            <VideoOff className="h-5 w-5 text-destructive" />
-          ) : (
-            <Video className="h-5 w-5" />
-          )}
-        </button>
-      ) : (
-        <span className="h-16 w-16 sm:h-14 sm:w-14" />
-      )}
-    </div>
   );
 }
 
@@ -182,6 +181,7 @@ export function CallOverlay({
   const localVideo = useRef<HTMLVideoElement>(null);
   const remoteAudio = useRef<HTMLAudioElement>(null);
   const name = peerName(call.peer);
+  const isVideo = call.type === "video";
 
   useEffect(() => {
     if (remoteVideo.current && remoteStream) remoteVideo.current.srcObject = remoteStream;
@@ -189,13 +189,11 @@ export function CallOverlay({
     if (localVideo.current && localStream) localVideo.current.srcObject = localStream;
   }, [remoteStream, localStream]);
 
-  const isVideo = call.type === "video";
+  if (isVideo) {
+    return (
+      <div className="fixed inset-0 z-[95] flex flex-col bg-[#05060A]">
+        <audio ref={remoteAudio} autoPlay playsInline className="hidden" />
 
-  return (
-    <div className="fixed inset-0 z-[95] flex flex-col bg-[#05060a]">
-      <audio ref={remoteAudio} autoPlay playsInline className="hidden" />
-
-      {isVideo ? (
         <div className="relative flex-1 overflow-hidden">
           {remoteStream ? (
             <video
@@ -206,10 +204,12 @@ export function CallOverlay({
             />
           ) : (
             <div className="grid h-full w-full place-items-center">
-              <Avatar peer={call.peer} />
+              <Avatar peer={call.peer} size="lg" />
             </div>
           )}
-          <div className="absolute right-4 top-4 h-40 w-28 overflow-hidden rounded-2xl border border-border bg-black shadow-xl sm:h-48 sm:w-36">
+
+          {/* Local pip */}
+          <div className="absolute right-4 top-4 h-40 w-28 overflow-hidden rounded-2xl border border-white/20 bg-black shadow-2xl sm:h-48 sm:w-36">
             <video
               ref={localVideo}
               autoPlay
@@ -218,38 +218,136 @@ export function CallOverlay({
               className="h-full w-full object-cover"
             />
           </div>
-          <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/70 to-transparent px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-center">
-            <p className="text-lg font-extrabold">{name}</p>
-            <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
+
+          {/* Top header overlay */}
+          <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent px-5 pb-10 pt-[max(1.5rem,env(safe-area-inset-top))] text-center">
+            <p className="text-xl font-extrabold text-white">{name}</p>
+            {call.peer?.username && (
+              <p className="text-xs text-slate-300">@{call.peer.username}</p>
+            )}
+            <p className="mt-1 text-sm font-semibold tabular-nums text-primary">
               {stateLabel(state, seconds, name, error)}
             </p>
+            <PermissionHint error={state === "FAILED" ? error : null} isVideo={true} />
           </div>
         </div>
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-5 px-6 pt-[env(safe-area-inset-top)] text-center">
-          <Avatar peer={call.peer} />
-          <div>
-            <h2 className="text-2xl font-extrabold">{name}</h2>
-            <p className="mt-1 text-sm tabular-nums text-muted-foreground">
-              {stateLabel(state, seconds, name, error)}
-            </p>
-          </div>
-          <PermissionHint error={state === "FAILED" ? error : null} />
-          <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Lock className="h-3 w-3" /> Peer-to-peer · never recorded
+
+        {/* Video controls */}
+        <div className="flex items-center justify-center gap-6 bg-black/90 pb-[max(2rem,env(safe-area-inset-bottom))] pt-4">
+          <button
+            onClick={onToggleMute}
+            className={[
+              "press grid h-14 w-14 place-items-center rounded-full border transition-all hover:scale-105 active:scale-95",
+              muted
+                ? "border-red-500 bg-red-500/20 text-red-400"
+                : "border-white/20 bg-white/10 text-white hover:bg-white/20",
+            ].join(" ")}
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+          </button>
+          <button
+            onClick={onHangUp}
+            className="press grid h-18 w-18 place-items-center rounded-full bg-[#EF4444] text-white shadow-xl shadow-red-500/35 transition-all hover:bg-[#DC2626] hover:scale-105 active:scale-95"
+            aria-label="End call"
+          >
+            <PhoneOff className="h-7 w-7" />
+          </button>
+          <button
+            onClick={onToggleCamera}
+            className={[
+              "press grid h-14 w-14 place-items-center rounded-full border transition-all hover:scale-105 active:scale-95",
+              cameraOff
+                ? "border-red-500 bg-red-500/20 text-red-400"
+                : "border-white/20 bg-white/10 text-white hover:bg-white/20",
+            ].join(" ")}
+            aria-label={cameraOff ? "Turn camera on" : "Turn camera off"}
+          >
+            {cameraOff ? <VideoOff className="h-6 w-6" /> : <Video className="h-6 w-6" />}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Voice call: Ghostline Premium Light Aesthetic
+  return (
+    <div className="fixed inset-0 z-[95] flex flex-col bg-gradient-to-b from-[#F0F6FE] via-[#F7FAFE] to-[#EBF3FC]">
+      <audio ref={remoteAudio} autoPlay playsInline className="hidden" />
+
+      {/* Top security header */}
+      <div className="flex items-center justify-between px-6 pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-10">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#DCE8F5] bg-white/85 px-3.5 py-1.5 text-xs font-medium text-[#64748B] shadow-xs backdrop-blur-md">
+          <Lock className="h-3.5 w-3.5 text-primary" />
+          <span>Ghostline Private Call · E2EE</span>
+        </div>
+        {state === "CONNECTED" && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-600">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </span>
+        )}
+      </div>
+
+      {/* Center hero */}
+      <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        {/* Pulsing Avatar */}
+        <div className="relative mb-6 flex items-center justify-center">
+          {(state === "OUTGOING" || state === "CONNECTING") && (
+            <>
+              <span className="absolute -inset-4 rounded-full bg-primary/10 animate-ping opacity-60" />
+              <span className="absolute -inset-2 rounded-full bg-primary/15 animate-pulse" />
+            </>
+          )}
+          <Avatar peer={call.peer} size="lg" />
+        </div>
+
+        <h2 className="text-3xl font-black tracking-tight text-[#0B1B33]">
+          {name}
+        </h2>
+        {call.peer?.username && (
+          <p className="mt-1 text-sm font-medium text-[#64748B]">@{call.peer.username}</p>
+        )}
+
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#DCE8F5] bg-white px-4 py-1.5 shadow-xs">
+          <p className="text-sm font-bold tabular-nums text-primary">
+            {stateLabel(state, seconds, name, error)}
           </p>
         </div>
-      )}
 
-      <div className="pt-6">
-        <Controls
-          type={call.type}
-          muted={muted}
-          cameraOff={cameraOff}
-          onToggleMute={onToggleMute}
-          onToggleCamera={onToggleCamera}
-          onHangUp={onHangUp}
-        />
+        <PermissionHint error={state === "FAILED" ? error : null} isVideo={false} />
+      </div>
+
+      {/* Voice controls dock */}
+      <div className="flex items-center justify-center gap-7 pb-[max(2.5rem,env(safe-area-inset-bottom))] sm:gap-9">
+        <div className="flex flex-col items-center gap-2">
+          <button
+            onClick={onToggleMute}
+            className={[
+              "press grid h-16 w-16 place-items-center rounded-full border shadow-md transition-all hover:scale-105 active:scale-95",
+              muted
+                ? "border-red-200 bg-red-50 text-red-600 shadow-red-500/10"
+                : "border-[#DCE8F5] bg-white text-[#0B1B33] hover:bg-slate-50 shadow-slate-200/50",
+            ].join(" ")}
+            aria-label={muted ? "Unmute" : "Mute"}
+          >
+            {muted ? <MicOff className="h-6 w-6 text-red-600" /> : <Mic className="h-6 w-6" />}
+          </button>
+          <span className="text-xs font-semibold text-[#64748B]">
+            {muted ? "Unmute" : "Mute"}
+          </span>
+        </div>
+
+        <div className="flex flex-col items-center gap-2">
+          <button
+            onClick={onHangUp}
+            className="press grid h-20 w-20 place-items-center rounded-full bg-[#EF4444] text-white shadow-xl shadow-red-500/35 transition-all hover:bg-[#DC2626] hover:scale-105 active:scale-95"
+            aria-label="End call"
+          >
+            <PhoneOff className="h-8 w-8" />
+          </button>
+          <span className="text-xs font-semibold text-red-600">End</span>
+        </div>
       </div>
     </div>
   );

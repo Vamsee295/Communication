@@ -97,8 +97,12 @@ export const listMessages = createServerFn({ method: "GET" })
   .handler(async ({ data, context }): Promise<MessageRow[]> => {
     const messages = await app(context).messages.list(data.conversation_id, { before: data.before, limit: data.limit });
     if (messages.length && process.env.DATA_REPOSITORY_DRIVER?.toLowerCase() === "neon") {
-      const attachments = await new AttachmentService(getPostgresClient(), context.userId).forMessages(messages.map((m) => m.id));
-      return messages.map((m) => ({ ...m, attachments: attachments[m.id] ?? [] }));
+      try {
+        const attachments = await new AttachmentService(getPostgresClient(), context.userId).forMessages(messages.map((m) => m.id));
+        return messages.map((m) => ({ ...m, attachments: attachments[m.id] ?? [] }));
+      } catch {
+        return messages.map((m) => ({ ...m, attachments: [] }));
+      }
     }
     return messages;
   });
@@ -133,8 +137,12 @@ export const getMessagesByIds = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<MessageRow[]> => {
     const messages = await app(context).messages.getByIds(data.ids);
     if (messages.length && process.env.DATA_REPOSITORY_DRIVER?.toLowerCase() === "neon") {
-      const attachments = await new AttachmentService(getPostgresClient(), context.userId).forMessages(messages.map((m) => m.id));
-      return messages.map((m) => ({ ...m, attachments: attachments[m.id] ?? [] }));
+      try {
+        const attachments = await new AttachmentService(getPostgresClient(), context.userId).forMessages(messages.map((m) => m.id));
+        return messages.map((m) => ({ ...m, attachments: attachments[m.id] ?? [] }));
+      } catch {
+        return messages.map((m) => ({ ...m, attachments: [] }));
+      }
     }
     return messages;
   });
@@ -303,7 +311,14 @@ export const markRead = createServerFn({ method: "POST" })
     z
       .object({
         conversation_id: z.string().uuid(),
-        up_to_created_at: z.string().datetime(),
+        up_to_created_at: z
+          .string()
+          .optional()
+          .transform((val) => {
+            if (!val) return new Date().toISOString();
+            const d = new Date(val);
+            return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+          }),
       })
       .parse(data),
   )

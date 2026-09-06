@@ -202,7 +202,7 @@ export class PostgresConversationRepository implements ConversationRepository {
   async updateLastRead(userId: string, conversationId: string, lastReadAt: string): Promise<void> {
     await this.db`
       UPDATE public.conversation_members
-         SET last_read_at = ${lastReadAt}
+         SET last_read_at = GREATEST(COALESCE(last_read_at, '1970-01-01'::timestamptz), ${lastReadAt}::timestamptz, clock_timestamp())
        WHERE conversation_id = ${conversationId} AND user_id = ${userId};
     `;
   }

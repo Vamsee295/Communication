@@ -74,7 +74,7 @@ describe("E2EE-1: Cryptographic Identity & PreKey Infrastructure", () => {
     };
 
     function setupMocks() {
-      const prekeysMap = new Map<string, PublicPrekeyRecord>();
+      const prekeysMap = new Map<string, any>();
       const opkMap = new Map<string, Array<{ key_id: number; public_key: string }>>();
 
       const mockPrekeyRepo: PrekeyRepository = {

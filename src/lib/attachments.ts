@@ -66,19 +66,27 @@ export class AttachmentService {
   async access(id: string) { const a = await this.get(id); await this.member(a.conversation_id); if (a.status !== "attached") throw new NotFoundError("Attachment not available"); return { url: signUrl("GET", a.storage_key), expires_in: expirySeconds }; }
   async forMessages(messageIds: string[]): Promise<Record<string, Attachment[]>> {
     if (!messageIds.length) return {};
-    const rows = await this.db<Stored[]>`SELECT id,conversation_id,uploader_id,message_id,storage_key,original_filename,mime_type,file_size,status,created_at::text FROM public.attachments WHERE message_id = ANY(${messageIds}) AND status='attached' ORDER BY created_at ASC`;
-    return rows.map(this.public).reduce<Record<string, Attachment[]>>((grouped, attachment) => {
-      const key = attachment.message_id!; (grouped[key] ??= []).push(attachment); return grouped;
-    }, {});
+    try {
+      const rows = await this.db<Stored[]>`SELECT id,conversation_id,uploader_id,message_id,storage_key,original_filename,mime_type,file_size,status,created_at::text FROM public.attachments WHERE message_id = ANY(${messageIds}) AND status='attached' ORDER BY created_at ASC`;
+      return rows.map(this.public).reduce<Record<string, Attachment[]>>((grouped, attachment) => {
+        const key = attachment.message_id!; (grouped[key] ??= []).push(attachment); return grouped;
+      }, {});
+    } catch {
+      return {};
+    }
   }
   async cleanupForMessage(messageId: string) {
-    const rows = await this.db<Stored[]>`SELECT id,conversation_id,uploader_id,message_id,storage_key,original_filename,mime_type,file_size,status,created_at::text FROM public.attachments WHERE message_id=${messageId}`;
-    // R2 failures intentionally do not block the existing hard-delete behavior. Keys are logged
-    // for manual/batch cleanup rather than retaining a message the user deleted.
-    await Promise.all(rows.map(async (attachment) => {
-      try { await fetch(signUrl("DELETE", attachment.storage_key), { method: "DELETE" }); }
-      catch { console.error("[ATTACHMENT_CLEANUP_FAILED]", attachment.id); }
-    }));
+    try {
+      const rows = await this.db<Stored[]>`SELECT id,conversation_id,uploader_id,message_id,storage_key,original_filename,mime_type,file_size,status,created_at::text FROM public.attachments WHERE message_id=${messageId}`;
+      // R2 failures intentionally do not block the existing hard-delete behavior. Keys are logged
+      // for manual/batch cleanup rather than retaining a message the user deleted.
+      await Promise.all(rows.map(async (attachment) => {
+        try { await fetch(signUrl("DELETE", attachment.storage_key), { method: "DELETE" }); }
+        catch { console.error("[ATTACHMENT_CLEANUP_FAILED]", attachment.id); }
+      }));
+    } catch {
+      // Table may not exist yet; safe fallback
+    }
   }
   async send(input: { conversation_id: string; body: string; attachment_ids: string[]; client_id?: string }) : Promise<Message> {
     await this.member(input.conversation_id);

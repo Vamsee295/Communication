@@ -33,6 +33,7 @@ export interface ProfileRepository {
   search(query: string, excludeId: string): Promise<FriendProfile[]>;
   getChatProfiles(ids: string[]): Promise<ChatProfile[]>;
   getCallPeer(id: string): Promise<CallPeer | null>;
+  checkUsernameAvailability(username: string): Promise<boolean>;
 }
 
 export interface FriendshipRepository {

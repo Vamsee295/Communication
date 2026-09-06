@@ -30,6 +30,7 @@ import {
   UserPlus,
   LogOut,
   Loader2,
+  Moon,
 } from "lucide-react";
 import {
   getConversation,
@@ -68,6 +69,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import { usePresence, statusLabel } from "@/components/presence-provider";
 import { useCalls } from "@/components/calls/call-provider";
+import { useVanishMode } from "@/hooks/use-vanish-mode";
+import { VanishBanner } from "@/components/chat/vanish-banner";
+import { EphemeralMessageBubble } from "@/components/chat/ephemeral-message-bubble";
 
 export const Route = createFileRoute("/_authenticated/chats/$conversationId")({
   component: ChatRoom,
@@ -258,6 +262,33 @@ function ChatRoom() {
   // Realtime
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [channelReady, setChannelReady] = useState(false);
+
+  // ── Vanish Mode (ephemeral messaging — zero Neon writes) ──────────────
+  const myDisplayName = me.data
+    ? ((me.data as { display_name?: string | null; username?: string | null }).display_name ??
+       (me.data as { username?: string | null }).username ??
+       "Ghost")
+    : "Ghost";
+
+  const {
+    vanishActive,
+    vanishMessages,
+    enterVanishMode,
+    exitVanishMode,
+    sendVanishMessage,
+    onRemoteVanishStart,
+    onRemoteVanishEnd,
+    onRemoteVanishMessage,
+    touchHandlers,
+  } = useVanishMode({
+    conversationId,
+    meId: meId ?? "",
+    myName: myDisplayName,
+    channelRef,
+    channelReady,
+  });
+  // ────────────────────────────────────────────────────────────────────────
+
   useEffect(() => {
     if (!meId) return;
     setChannelReady(false);
@@ -313,6 +344,17 @@ function ChatRoom() {
         const uid = (payload.payload as { user_id?: string })?.user_id;
         if (uid && uid !== meId) setTypingOther(Date.now());
       })
+      // ── Vanish Mode Broadcast events (ephemeral — no Neon writes) ──────────
+      .on("broadcast", { event: "vanish_mode_started" }, () => {
+        onRemoteVanishStart();
+      })
+      .on("broadcast", { event: "vanish_mode_ended" }, () => {
+        onRemoteVanishEnd();
+      })
+      .on("broadcast", { event: "vanish_message_sent" }, (payload) => {
+        onRemoteVanishMessage(payload);
+      })
+      // ────────────────────────────────────────────────────────────────────────
       .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState() as Record<string, unknown>;
         setPresentIds(new Set(Object.keys(state).filter((k) => k !== meId)));
@@ -345,11 +387,19 @@ function ChatRoom() {
   }, [rendered.length, searchOpen]);
 
   useEffect(() => {
-    if (!rendered.length) return;
-    const last = rendered[rendered.length - 1];
-    doMarkRead({ data: { conversation_id: conversationId, up_to_created_at: last.created_at } })
+    qc.setQueryData<ConversationSummary[]>(["conversations"], (old) => {
+      if (!old) return old;
+      return old.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c));
+    });
+
+    const last = rendered.length ? rendered[rendered.length - 1] : null;
+    const upTo = last?.created_at
+      ? (!isNaN(Date.parse(last.created_at)) ? new Date(last.created_at).toISOString() : new Date().toISOString())
+      : new Date().toISOString();
+
+    doMarkRead({ data: { conversation_id: conversationId, up_to_created_at: upTo } })
       .then(() => qc.invalidateQueries({ queryKey: ["conversations"] }))
-      .catch(() => {});
+      .catch((err) => console.error("[Ghostline] markRead error:", err));
   }, [rendered.length, conversationId, doMarkRead, qc]);
 
   const send = useMutation({
@@ -429,6 +479,15 @@ function ChatRoom() {
   const submit = () => {
     const body = text.trim();
     if (!body) return;
+
+    // ── Vanish Mode: route through ephemeral path — NEVER write to Neon ──────
+    if (vanishActive) {
+      sendVanishMessage(body);
+      setText("");
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (editing) {
       commitEdit.mutate({ id: editing.id, body });
       setText("");
@@ -548,7 +607,7 @@ function ChatRoom() {
   const pinnedMessages = pins.data?.messages ?? [];
 
   const ring = (type: "voice" | "video") => {
-    if (!otherId) return;
+    if (!otherId || otherId === meId) return;
     void startCall({
       conversationId,
       peerId: otherId,
@@ -569,6 +628,7 @@ function ChatRoom() {
     <div
       className="flex flex-col overscroll-none"
       style={{ height: `calc(100dvh - ${keyboardInset}px)` }}
+      {...touchHandlers}
     >
       <header className="glass sticky top-0 z-30 flex items-center gap-1 px-2 py-2.5 sm:gap-2 sm:px-3">
         <button
@@ -636,7 +696,8 @@ function ChatRoom() {
         </button>
         <button
           onClick={() => ring("voice")}
-          disabled={!otherId}
+          disabled={!otherId || otherId === meId}
+          title={otherProfile ? `Call ${otherProfile.display_name ?? otherProfile.username}` : "Voice call"}
           className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 active:bg-white/10 disabled:opacity-40"
           aria-label="Voice call"
         >
@@ -644,11 +705,27 @@ function ChatRoom() {
         </button>
         <button
           onClick={() => ring("video")}
-          disabled={!otherId}
+          disabled={!otherId || otherId === meId}
+          title={otherProfile ? `Video call with ${otherProfile.display_name ?? otherProfile.username}` : "Video call"}
           className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 active:bg-white/10 disabled:opacity-40"
           aria-label="Video call"
         >
           <Video className="h-4 w-4" />
+        </button>
+        {/* Vanish Mode toggle button (desktop / quick access) */}
+        <button
+          onClick={() => (vanishActive ? exitVanishMode() : enterVanishMode())}
+          title={vanishActive ? "Exit Vanish Mode" : "Enter Vanish Mode"}
+          aria-label={vanishActive ? "Exit Vanish Mode" : "Enter Vanish Mode"}
+          aria-pressed={vanishActive}
+          className={[
+            "grid h-11 w-11 shrink-0 place-items-center rounded-full transition",
+            vanishActive
+              ? "text-[#7cb9ff] bg-[rgba(37,135,245,0.2)]"
+              : "hover:bg-white/10",
+          ].join(" ")}
+        >
+          <Moon className="h-4 w-4" />
         </button>
         <button
           onClick={() => setHeaderMenu((v) => !v)}
@@ -704,6 +781,16 @@ function ChatRoom() {
                 className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
               >
                 <Pin className="h-4 w-4" /> {pinsCollapsed ? "Show pinned" : "Hide pinned"}
+              </button>
+              <button
+                onClick={() => {
+                  setHeaderMenu(false);
+                  vanishActive ? exitVanishMode() : enterVanishMode();
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
+              >
+                <Moon className="h-4 w-4" />
+                {vanishActive ? "Exit Vanish Mode" : "Vanish Mode"}
               </button>
               <button
                 onClick={() => {
@@ -824,7 +911,14 @@ function ChatRoom() {
         </div>
       )}
 
-      <div ref={scrollerRef} className="flex-1 overflow-y-auto px-4 py-4">
+      {/* Vanish Mode overlay banner */}
+      {vanishActive && <VanishBanner onExit={exitVanishMode} />}
+
+      <div
+        ref={scrollerRef}
+        className="flex-1 overflow-y-auto px-4 py-4"
+        style={vanishActive ? { background: "linear-gradient(180deg, #070f1d 0%, #0b1b33 100%)" } : undefined}
+      >
         <ul className="mx-auto flex max-w-md flex-col gap-1.5">
           {rendered.map((m, i) => {
             const mine = m.sender_id === meId;
@@ -938,15 +1032,46 @@ function ChatRoom() {
               </div>
             </li>
           )}
+          {/* Vanish Mode: ephemeral messages (never in Neon) */}
+          {vanishActive && vanishMessages.map((em) => (
+            <EphemeralMessageBubble
+              key={em.id}
+              message={em}
+              mine={em.sender_id === meId}
+              showName={conv.data?.conversation.kind === "group"}
+            />
+          ))}
+          {/* Vanish Mode typing indicator area (reuse existing typingOther) */}
+          {typingOther && (
+            <li className="flex justify-start">
+              <div className="glass flex items-center gap-1 rounded-2xl rounded-bl-md px-3 py-2">
+                <Dot delay="0ms" />
+                <Dot delay="150ms" />
+                <Dot delay="300ms" />
+              </div>
+            </li>
+          )}
         </ul>
       </div>
 
       <form
         onSubmit={(e) => { e.preventDefault(); submit(); }}
-        className="sticky bottom-0 z-20 bg-background/80 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur"
+        className="sticky bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur"
+        style={vanishActive
+          ? { background: "rgba(7,15,29,0.92)" }
+          : { background: "rgba(var(--background), 0.8)" }}
       >
+        {/* Vanish Mode composer label */}
+        {vanishActive && (
+          <div className="mx-auto mb-1 max-w-md">
+            <p className="flex items-center gap-1 text-[10px] font-medium" style={{ color: "#4a7a9e" }}>
+              <Moon className="h-3 w-3" aria-hidden />
+              Vanish Mode — messages won't be saved
+            </p>
+          </div>
+        )}
         <div className="mx-auto max-w-md">
-          {(replyTo || editing) && (
+          {!vanishActive && (replyTo || editing) && (
             <div className="glass mb-1.5 flex items-center gap-2 rounded-2xl border-l-2 border-primary px-3 py-2">
               {editing ? <Pencil className="h-3.5 w-3.5 text-primary" /> : <Reply className="h-3.5 w-3.5 text-primary" />}
               <div className="min-w-0 flex-1">
@@ -970,7 +1095,7 @@ function ChatRoom() {
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
-                notifyTyping();
+                if (!vanishActive) notifyTyping();
                 const el = e.currentTarget;
                 el.style.height = "auto";
                 el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
@@ -984,16 +1109,29 @@ function ChatRoom() {
                 if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
               }}
               rows={1}
-              placeholder={editing ? "Edit message" : "Message"}
-              className="glass max-h-32 min-h-11 flex-1 resize-none rounded-3xl px-4 py-3 text-sm outline-none"
+              placeholder={vanishActive ? "Vanish message..." : editing ? "Edit message" : "Message"}
+              className={[
+                "max-h-32 min-h-11 flex-1 resize-none rounded-3xl px-4 py-3 text-sm outline-none transition-colors",
+                vanishActive ? "" : "glass",
+              ].join(" ")}
+              style={vanishActive
+                ? { background: "rgba(11,27,51,0.9)", border: "1px solid rgba(37,135,245,0.3)", color: "#c8daf0" }
+                : undefined}
+              aria-label={vanishActive ? "Type a vanish message" : "Type a message"}
             />
             <button
               type="submit"
-              disabled={!text.trim() || send.isPending || commitEdit.isPending}
-              className="grid h-11 w-11 place-items-center rounded-full bg-primary text-primary-foreground glow-primary disabled:opacity-40"
-              aria-label={editing ? "Save" : "Send"}
+              disabled={!text.trim() || (!vanishActive && (send.isPending || commitEdit.isPending))}
+              className={[
+                "grid h-11 w-11 place-items-center rounded-full text-primary-foreground transition disabled:opacity-40",
+                vanishActive ? "" : "bg-primary glow-primary",
+              ].join(" ")}
+              style={vanishActive
+                ? { background: "linear-gradient(135deg, #0f2f5a, #1a4f8a)", boxShadow: "0 2px 12px rgba(37,135,245,0.3)" }
+                : undefined}
+              aria-label={editing ? "Save" : vanishActive ? "Send vanish message" : "Send"}
             >
-              <Send className="h-4 w-4" />
+              {vanishActive ? <Moon className="h-4 w-4" /> : <Send className="h-4 w-4" />}
             </button>
           </div>
         </div>
