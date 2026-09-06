@@ -34,3 +34,9 @@ dist-ssr
 *.sln
 *.sw?
 .neon
+Agentic Coding/
+
+# Rules And Skills
+.agents/
+
+

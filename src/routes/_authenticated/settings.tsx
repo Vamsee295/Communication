@@ -173,11 +173,11 @@ function WebPushToggle() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="mt-7">
-      <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+    <section className="mt-6">
+      <p className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
         {title}
       </p>
-      <div className="panel overflow-hidden rounded-2xl">{children}</div>
+      <div className="overflow-hidden rounded-2xl border border-border bg-white shadow-sm">{children}</div>
     </section>
   );
 }
@@ -196,11 +196,13 @@ function Row({
   return (
     <Link
       to={to}
-      className="flex items-center gap-3 border-b border-border px-4 py-3.5 last:border-b-0 transition hover:bg-surface-2/70"
+      className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 transition hover:bg-surface-2/70"
     >
-      <Icon className="h-[18px] w-[18px] shrink-0 text-primary" />
+      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
+        <Icon className="h-[16px] w-[16px] shrink-0 text-primary" />
+      </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold">{label}</p>
+        <p className="text-[14px] font-semibold text-foreground">{label}</p>
         {hint && <p className="truncate text-[12px] text-muted-foreground">{hint}</p>}
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -221,8 +223,8 @@ function SettingsPage() {
 
   return (
     <AppShell>
-      <div className="mx-auto w-full max-w-2xl px-5 pb-16 pt-8 lg:pt-10">
-        <h1 className="text-[28px] font-extrabold tracking-tight">Settings</h1>
+      <div className="mx-auto w-full max-w-xl px-5 pb-16 pt-8 lg:pt-10">
+        <h1 className="text-[22px] font-extrabold tracking-tight text-foreground">Settings</h1>
 
         <Section title="Account">
           <Row to="/profile" icon={User} label="Profile" hint="Name, username and bio" />
@@ -233,13 +235,15 @@ function SettingsPage() {
           <Row to="/devices" icon={Smartphone} label="Active devices" hint="Where you're signed in" />
           <Row to="/blocked" icon={ShieldBan} label="Blocked contacts" hint="People who can't reach you" />
           <div className="flex items-start gap-3 px-4 py-3.5">
-            <Lock className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
+            <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
+              <Lock className="h-[16px] w-[16px] shrink-0 text-primary" />
+            </div>
             <div>
-              <p className="text-sm font-semibold">How Ghostline protects you</p>
+              <p className="text-[14px] font-semibold text-foreground">How Ghostline protects you</p>
               <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
                 Calls connect peer-to-peer and are encrypted in transit (DTLS-SRTP) — they are never
                 recorded or stored. Messages are encrypted in transit and access is restricted to the
-                people in the conversation. Message end-to-end encryption is not enabled yet.
+                people in the conversation.
               </p>
             </div>
           </div>
@@ -248,9 +252,11 @@ function SettingsPage() {
         <Section title="Notifications">
           <WebPushToggle />
           <div className="border-t border-border flex items-start gap-3 px-4 py-3.5">
-            <Bell className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
+            <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
+              <Bell className="h-[16px] w-[16px] shrink-0 text-primary" />
+            </div>
             <div>
-              <p className="text-sm font-semibold">Per-chat muting</p>
+              <p className="text-[14px] font-semibold text-foreground">Per-chat muting</p>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
                 Mute individual conversations directly from the chat options menu.
               </p>
@@ -260,11 +266,13 @@ function SettingsPage() {
 
         <Section title="Appearance">
           <div className="flex items-start gap-3 px-4 py-3.5">
-            <Palette className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
+            <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
+              <Palette className="h-[16px] w-[16px] shrink-0 text-primary" />
+            </div>
             <div>
-              <p className="text-sm font-semibold">Theme</p>
+              <p className="text-[14px] font-semibold text-foreground">Theme</p>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
-                Ghostline uses a single dark, privacy-first theme.
+                Ghostline uses a clean, light blue & white theme. Dark mode available.
               </p>
             </div>
           </div>
@@ -272,9 +280,11 @@ function SettingsPage() {
 
         <Section title="About">
           <div className="flex items-start gap-3 px-4 py-3.5">
-            <Info className="mt-0.5 h-[18px] w-[18px] shrink-0 text-primary" />
+            <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">
+              <Info className="h-[16px] w-[16px] shrink-0 text-primary" />
+            </div>
             <div>
-              <p className="text-sm font-semibold">Ghostline</p>
+              <p className="text-[14px] font-semibold text-foreground">Ghostline</p>
               <p className="mt-0.5 text-[12px] text-muted-foreground">
                 Version 1.0 · Private messaging with peer-to-peer voice and video calls.
               </p>
@@ -284,7 +294,7 @@ function SettingsPage() {
 
         <button
           onClick={signOut}
-          className="press mt-7 flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border text-sm font-semibold text-destructive"
+          className="mt-7 flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-destructive/20 bg-destructive/5 text-sm font-semibold text-destructive transition hover:bg-destructive/10"
         >
           <LogOut className="h-4 w-4" /> Log out
         </button>

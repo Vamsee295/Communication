@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Ghost, Loader2 } from "lucide-react";
+import { Loader2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { authService } from "@/lib/auth/session";
+import { GhostMark } from "@/components/app-shell";
 
 const searchSchema = z.object({
   mode: z.enum(["signin", "signup"]).optional(),
@@ -25,11 +26,11 @@ function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">(search.mode ?? "signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
-    // If already authed, bounce
     authService.getSession().then(({ data }) => {
       if (data.session) navigate({ to: "/chats", replace: true });
     });
@@ -80,80 +81,129 @@ function AuthPage() {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-40 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4 py-12">
+      {/* Background orbs */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-20 left-1/2 h-[400px] w-[400px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-[300px] w-[300px] rounded-full bg-primary/6 blur-3xl" />
       </div>
 
-      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-6 pt-14 pb-10">
-        <Link to="/" className="flex items-center gap-2">
-          <div className="grid h-9 w-9 place-items-center rounded-2xl bg-primary text-primary-foreground">
-            <Ghost className="h-4 w-4" />
+      <div className="w-full max-w-[400px]">
+        {/* Logo */}
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <Link to="/" className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-white shadow-xl shadow-primary/30">
+            <GhostMark className="h-7 w-7" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-foreground">
+              {mode === "signup" ? "Create your account" : "Welcome back"}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {mode === "signup"
+                ? "Sign up to continue to Ghostline"
+                : "Sign in to continue to Ghostline"}
+            </p>
           </div>
-          <span className="font-black">Ghostline</span>
-        </Link>
-
-        <div className="mt-12">
-          <h1 className="text-3xl font-black tracking-tight">
-            {mode === "signup" ? "Create your ghost" : "Welcome back"}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {mode === "signup"
-              ? "Sign up to send disappearing messages."
-              : "Sign in to your Ghostline account."}
-          </p>
         </div>
 
-        <button
-          onClick={handleGoogle}
-          disabled={googleLoading}
-          className="mt-8 flex h-12 items-center justify-center gap-3 rounded-full bg-white text-sm font-semibold text-black transition active:scale-[0.98] disabled:opacity-60"
-        >
-          {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-          Continue with Google
-        </button>
-
-        <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-          <div className="h-px flex-1 bg-border" />
-          or with email
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        <form onSubmit={handleSubmit} className="grid gap-3">
-          <input
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="h-12 rounded-2xl border border-input bg-card px-4 text-sm outline-none focus:border-primary"
-            required
-          />
-          <input
-            type="password"
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            placeholder="Password (8+ characters)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="h-12 rounded-2xl border border-input bg-card px-4 text-sm outline-none focus:border-primary"
-            required
-          />
+        {/* Card */}
+        <div className="card-elevated rounded-3xl p-7">
+          {/* Google */}
           <button
-            type="submit"
-            disabled={loading}
-            className="mt-2 flex h-12 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground transition active:scale-[0.98] disabled:opacity-60"
+            onClick={handleGoogle}
+            disabled={googleLoading}
+            className="flex w-full h-11 items-center justify-center gap-3 rounded-xl border border-border bg-white text-sm font-semibold text-foreground shadow-sm transition hover:bg-surface-2 active:scale-[0.98] disabled:opacity-60"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "signup" ? "Create account" : "Sign in"}
+            {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+            Continue with Google
           </button>
-        </form>
 
-        <button
-          type="button"
-          onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
-          className="mt-6 text-center text-sm text-muted-foreground hover:text-foreground"
-        >
-          {mode === "signup" ? "Already have an account? Sign in" : "New here? Create an account"}
-        </button>
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">or with email</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="grid gap-3">
+            {/* Email */}
+            <div className="focus-ring rounded-xl border border-border bg-white transition">
+              <input
+                id="auth-email"
+                type="email"
+                autoComplete="email"
+                placeholder="vamsee@gmail.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="h-11 w-full rounded-xl bg-transparent px-4 text-sm outline-none placeholder:text-muted-foreground"
+                required
+              />
+            </div>
+
+            {/* Password */}
+            <div className="focus-ring flex items-center rounded-xl border border-border bg-white transition">
+              <input
+                id="auth-password"
+                type={showPassword ? "text" : "password"}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-11 flex-1 rounded-xl bg-transparent px-4 text-sm outline-none placeholder:text-muted-foreground"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="pr-3 text-muted-foreground hover:text-foreground"
+                tabIndex={-1}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+
+            {mode === "signin" && (
+              <div className="text-right">
+                <span className="text-xs text-muted-foreground hover:text-foreground cursor-pointer">Forgot Password?</span>
+              </div>
+            )}
+
+            <button
+              id="auth-submit"
+              type="submit"
+              disabled={loading}
+              className="mt-1 flex h-11 w-full items-center justify-center rounded-xl bg-primary text-sm font-bold text-white shadow-md shadow-primary/25 transition hover:bg-[#1467D8] active:scale-[0.98] disabled:opacity-60"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : mode === "signup" ? (
+                "Create account"
+              ) : (
+                "Sign in"
+              )}
+            </button>
+          </form>
+
+          <div className="mt-5 text-center">
+            <button
+              id="auth-toggle-mode"
+              type="button"
+              onClick={() => setMode(mode === "signup" ? "signin" : "signup")}
+              className="text-sm text-muted-foreground hover:text-foreground transition"
+            >
+              {mode === "signup" ? (
+                <>Already have an account?{" "}<span className="font-semibold text-primary">Sign in</span></>
+              ) : (
+                <>New here?{" "}<span className="font-semibold text-primary">Create an account</span></>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Privacy note */}
+        <p className="mt-6 text-center text-[11px] text-muted-foreground">
+          Private · Secure · Fast · Always With You
+        </p>
       </div>
     </main>
   );

@@ -281,33 +281,30 @@ function ChatsPage() {
     <AppShell>
       <div className="flex min-h-screen w-full">
         {/* Conversation list column */}
-        <section className="flex min-w-0 flex-1 flex-col lg:max-w-[400px] lg:border-r lg:border-border">
-          <header className="sticky top-0 z-20 bg-background/85 px-5 pb-4 pt-8 backdrop-blur-xl lg:pt-6">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
-              <div className="min-w-0">
-                <p className="brand-wordmark text-[10px] text-muted-foreground lg:hidden">Ghostline</p>
-                <h1 className="truncate text-[28px] font-extrabold tracking-tight">Chats</h1>
-              </div>
+        <section className="flex min-w-0 flex-1 flex-col bg-white lg:max-w-[400px] lg:border-r lg:border-border">
+          <header className="sticky top-0 z-20 border-b border-border bg-white/95 px-4 pb-3 pt-6 backdrop-blur-xl lg:pt-5">
+            <div className="flex items-center justify-between">
+              <h1 className="text-[22px] font-extrabold tracking-tight text-foreground">Chats</h1>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowNewGroup(true)}
-                  className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-foreground"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
                   aria-label="New Group"
                   title="New group chat"
                 >
-                  <UsersRound className="h-[18px] w-[18px]" />
+                  <UsersRound className="h-[17px] w-[17px]" />
                 </button>
                 <Link
                   to="/contacts"
-                  className="press grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground glow-primary"
-                  aria-label="Contacts"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-white shadow-sm shadow-primary/30 transition hover:bg-[#1467D8]"
+                  aria-label="Add friend"
                 >
-                  <UserPlus className="h-[18px] w-[18px]" />
+                  <UserPlus className="h-[17px] w-[17px]" />
                 </Link>
               </div>
             </div>
 
-            <div className="focus-glow mt-4 flex items-center gap-2.5 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 transition">
+            <div className="focus-ring mt-3 flex items-center gap-2.5 rounded-xl border border-border bg-surface-2/50 px-3.5 py-2 transition">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
               <input
                 value={q}
@@ -318,47 +315,44 @@ function ChatsPage() {
                     setMobileSearch(true);
                   }
                 }}
-                placeholder="Search chats and messages"
+                placeholder="Search chats, people, or messages..."
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
               {q ? (
                 <button
                   onClick={() => setQ("")}
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-white/8 hover:text-foreground"
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-border"
                   aria-label="Clear"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
               ) : (
-                <kbd className="hidden shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground lg:block">
+                <kbd className="hidden shrink-0 rounded-md border border-border bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground lg:block">
                   ⌘K
                 </kbd>
               )}
             </div>
           </header>
 
-          <div className="flex-1 px-3 pb-6">{renderResults()}</div>
+          <div className="flex-1 overflow-y-auto px-2 pb-6 pt-1">{renderResults()}</div>
         </section>
 
         {/* Desktop detail pane */}
-        <section className="hidden flex-1 items-center justify-center px-10 lg:flex">
-          <div className="max-w-sm animate-rise-in text-center">
-            <div className="animate-breathe mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-              <GhostMark className="h-7 w-7" />
+        <section className="hidden flex-1 flex-col items-center justify-center bg-background px-10 lg:flex">
+          <div className="max-w-xs animate-rise-in text-center">
+            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary shadow-sm">
+              <GhostMark className="h-8 w-8" />
             </div>
-            <h2 className="mt-6 text-lg font-bold">Select a conversation</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Your private messages live here. Pick a chat on the left, or start a new one.
+            <h2 className="text-[17px] font-bold text-foreground">Select a chat to start messaging</h2>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+              Your private Ghostline conversations live here.
             </p>
             <Link
               to="/contacts"
-              className="press mt-6 inline-flex h-10 items-center justify-center rounded-xl border border-border px-5 text-sm font-semibold hover:bg-surface-2"
+              className="mt-6 inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-sm font-semibold text-white shadow-sm shadow-primary/25 transition hover:bg-[#1467D8]"
             >
               Start a conversation
             </Link>
-            <p className="mt-8 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
-              <Lock className="h-3 w-3" /> Messages are private
-            </p>
           </div>
         </section>
       </div>
@@ -510,19 +504,22 @@ function ChatRow({
         onTouchEnd={() => {
           if (longPress.current) clearTimeout(longPress.current);
         }}
-        className="group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-all duration-150 hover:translate-x-[3px] hover:bg-surface-2/70"
+        className="group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-150 hover:bg-surface-2/70 active:bg-surface-2"
       >
+        {/* Avatar */}
         <div className="relative shrink-0">
-          <div className="grid h-11 w-11 place-items-center rounded-full bg-surface-2 text-sm font-bold text-primary ring-1 ring-border transition group-hover:ring-primary/30">
+          <div className="grid h-12 w-12 place-items-center rounded-full bg-primary/12 text-[15px] font-bold text-primary shadow-sm">
             {name.charAt(0).toUpperCase()}
           </div>
           {online && (
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-400" />
+            <span className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-white bg-success" />
           )}
         </div>
+
+        {/* Content */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="flex min-w-0 items-center gap-1.5 truncate text-[15px] font-semibold">
+          <div className="flex items-center justify-between gap-2">
+            <p className="flex min-w-0 items-center gap-1 truncate text-[14px] font-semibold text-foreground">
               {c.pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
               <span className="truncate">{name}</span>
               {c.muted && <BellOff className="h-3 w-3 shrink-0 text-muted-foreground" />}
@@ -530,38 +527,39 @@ function ChatRow({
             <span
               className={[
                 "shrink-0 text-[11px] tabular-nums",
-                c.unread > 0 ? "text-primary" : "text-muted-foreground",
+                c.unread > 0 ? "font-semibold text-primary" : "text-muted-foreground",
               ].join(" ")}
             >
               {ts}
             </span>
           </div>
-          <div className="mt-0.5 flex items-center gap-1.5">
+          <div className="mt-0.5 flex items-center gap-1">
             {mine && !last?.deleted_at && (
               <CheckCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             )}
             <p
               className={[
-                "truncate text-[13px]",
-                c.unread > 0 ? "text-foreground" : "text-muted-foreground",
+                "truncate text-[13px] leading-snug",
+                c.unread > 0 ? "font-medium text-foreground" : "text-muted-foreground",
               ].join(" ")}
             >
               {last ? preview : status}
             </p>
             {c.unread > 0 && (
-              <span className="ml-auto grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+              <span className="ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-white">
                 {c.unread}
               </span>
             )}
           </div>
         </div>
+
         <button
           onClick={(e) => {
             e.stopPropagation();
             onOpenMenu(!menuOpen);
           }}
           aria-label={`Options for ${name}`}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground opacity-0 transition hover:bg-white/8 hover:text-foreground focus:opacity-100 group-hover:opacity-100"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground opacity-0 transition hover:bg-border focus:opacity-100 group-hover:opacity-100"
         >
           <MoreVertical className="h-4 w-4" />
         </button>
@@ -570,7 +568,7 @@ function ChatRow({
       {menuOpen && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => onOpenMenu(false)} />
-          <div className="glass absolute right-3 top-12 z-40 w-52 overflow-hidden rounded-xl py-1 shadow-2xl">
+          <div className="absolute right-3 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-border bg-white py-1.5 shadow-xl shadow-black/10">
             {item(<MailOpen className="h-4 w-4" />, "Mark as unread", onUnread)}
             {item(
               c.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />,
@@ -615,20 +613,20 @@ function ConfirmDialog({
   }, [onCancel]);
 
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="glass animate-rise-in w-full max-w-sm rounded-2xl p-5">
-        <h2 className="text-base font-bold">{title}</h2>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/40 p-4 backdrop-blur-sm">
+      <div className="card-elevated animate-rise-in w-full max-w-sm rounded-2xl p-6">
+        <h2 className="text-[15px] font-bold text-foreground">{title}</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="mt-5 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="press h-10 rounded-xl border border-border px-4 text-sm font-semibold"
+            className="h-10 rounded-xl border border-border px-4 text-sm font-semibold text-foreground transition hover:bg-surface-2"
           >
             Cancel
           </button>
           <button
             onClick={onConfirm}
-            className="press h-10 rounded-xl bg-destructive px-4 text-sm font-semibold text-destructive-foreground"
+            className="h-10 rounded-xl bg-destructive px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-90"
           >
             {action}
           </button>
@@ -640,15 +638,15 @@ function ConfirmDialog({
 
 function EmptyState() {
   return (
-    <div className="panel flex flex-col items-center gap-3 rounded-2xl px-6 py-12 text-center">
-      <div className="animate-breathe grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/20">
-        <Users className="h-6 w-6" />
+    <div className="mt-8 flex flex-col items-center gap-3 rounded-2xl px-6 py-12 text-center">
+      <div className="mb-1 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+        <Users className="h-7 w-7" />
       </div>
-      <h2 className="text-base font-bold">No chats yet</h2>
-      <p className="max-w-xs text-sm text-muted-foreground">Add a friend and start the conversation.</p>
+      <h2 className="text-[15px] font-bold text-foreground">No chats yet</h2>
+      <p className="max-w-[200px] text-[13px] leading-relaxed text-muted-foreground">Add a friend and start your first conversation.</p>
       <Link
         to="/contacts"
-        className="press mt-2 inline-flex h-10 items-center justify-center rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground"
+        className="mt-2 inline-flex h-10 items-center justify-center rounded-xl bg-primary px-6 text-sm font-semibold text-white shadow-sm shadow-primary/25 transition hover:bg-[#1467D8]"
       >
         Find friends
       </Link>
@@ -701,7 +699,7 @@ function NewGroupSheet({
           <h3 className="text-lg font-bold">New Group</h3>
           <button
             onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-secondary"
           >
             <X className="h-4 w-4" />
           </button>
@@ -741,7 +739,7 @@ function NewGroupSheet({
                   onClick={() => toggle(friendId)}
                   className={[
                     "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition",
-                    on ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-white/5",
+                    on ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-secondary/70",
                   ].join(" ")}
                 >
                   <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/20 font-bold text-primary text-sm">

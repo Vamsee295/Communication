@@ -1,6 +1,6 @@
 import postgres from "postgres";
 
-const url = "postgresql://neondb_owner:npg_gxMlG8Bqu2CP@ep-lively-star-b35nmr1m.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
+const url = process.env.DATABASE_URL || "postgresql://user:password@localhost:5432/neondb";
 
 async function main() {
   console.log("Connecting to ghostline-migration-rehearsal branch...");

@@ -19,7 +19,8 @@
 import postgres from "postgres";
 
 const REHEARSAL_URL =
-  "postgresql://neondb_owner:npg_gxMlG8Bqu2CP@ep-lively-star-b35nmr1m.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
+  process.env.DATABASE_URL ||
+  "postgresql://user:password@localhost:5432/neondb";
 
 // Synthetic Fixture UUIDs
 const USER_A = "a0000000-0000-0000-0000-000000000001";

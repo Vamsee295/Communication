@@ -70,7 +70,7 @@ function StarredPage() {
                             params: { conversationId: item.message.conversation_id },
                           })
                         }
-                        className="rounded-full border border-border px-3 py-1 text-[11px] font-semibold hover:bg-white/5"
+                        className="rounded-full border border-border px-3 py-1 text-[11px] font-semibold hover:bg-secondary/70"
                       >
                         Open
                       </button>

@@ -151,14 +151,14 @@ function CallsPage() {
                   <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
                     <button
                       onClick={() => ring(c, "voice")}
-                      className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/8 hover:text-primary"
+                      className="grid h-9 w-9 place-items-center rounded-full hover:bg-secondary hover:text-primary"
                       aria-label={`Voice call ${name}`}
                     >
                       <Phone className="h-4 w-4" />
                     </button>
                     <button
                       onClick={() => ring(c, "video")}
-                      className="grid h-9 w-9 place-items-center rounded-full hover:bg-white/8 hover:text-primary"
+                      className="grid h-9 w-9 place-items-center rounded-full hover:bg-secondary hover:text-primary"
                       aria-label={`Video call ${name}`}
                     >
                       <Video className="h-4 w-4" />

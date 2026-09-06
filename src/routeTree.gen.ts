@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthVerifyEmailRouteImport } from './routes/auth.verify-email'
 import { Route as AuthenticatedStarredRouteImport } from './routes/_authenticated/starred'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated/settings'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
@@ -36,6 +37,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthVerifyEmailRoute = AuthVerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => AuthRoute,
 } as any)
 const AuthenticatedStarredRoute = AuthenticatedStarredRouteImport.update({
   id: '/starred',
@@ -91,7 +97,7 @@ const AuthenticatedChatsConversationIdRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/blocked': typeof AuthenticatedBlockedRoute
   '/calls': typeof AuthenticatedCallsRoute
   '/contacts': typeof AuthenticatedContactsRoute
@@ -100,12 +106,13 @@ export interface FileRoutesByFullPath {
   '/profile': typeof AuthenticatedProfileRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/starred': typeof AuthenticatedStarredRoute
+  '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/chats/': typeof AuthenticatedChatsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/blocked': typeof AuthenticatedBlockedRoute
   '/calls': typeof AuthenticatedCallsRoute
   '/contacts': typeof AuthenticatedContactsRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/profile': typeof AuthenticatedProfileRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/starred': typeof AuthenticatedStarredRoute
+  '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/chats': typeof AuthenticatedChatsIndexRoute
 }
@@ -121,7 +129,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/_authenticated/blocked': typeof AuthenticatedBlockedRoute
   '/_authenticated/calls': typeof AuthenticatedCallsRoute
   '/_authenticated/contacts': typeof AuthenticatedContactsRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/_authenticated/starred': typeof AuthenticatedStarredRoute
+  '/auth/verify-email': typeof AuthVerifyEmailRoute
   '/_authenticated/chats/$conversationId': typeof AuthenticatedChatsConversationIdRoute
   '/_authenticated/chats/': typeof AuthenticatedChatsIndexRoute
 }
@@ -146,6 +155,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/settings'
     | '/starred'
+    | '/auth/verify-email'
     | '/chats/$conversationId'
     | '/chats/'
   fileRoutesByTo: FileRoutesByTo
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/settings'
     | '/starred'
+    | '/auth/verify-email'
     | '/chats/$conversationId'
     | '/chats'
   id:
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/_authenticated/profile'
     | '/_authenticated/settings'
     | '/_authenticated/starred'
+    | '/auth/verify-email'
     | '/_authenticated/chats/$conversationId'
     | '/_authenticated/chats/'
   fileRoutesById: FileRoutesById
@@ -182,7 +194,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
-  AuthRoute: typeof AuthRoute
+  AuthRoute: typeof AuthRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -207,6 +219,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/auth/verify-email': {
+      id: '/auth/verify-email'
+      path: '/verify-email'
+      fullPath: '/auth/verify-email'
+      preLoaderRoute: typeof AuthVerifyEmailRouteImport
+      parentRoute: typeof AuthRoute
     }
     '/_authenticated/starred': {
       id: '/_authenticated/starred'
@@ -310,10 +329,20 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface AuthRouteChildren {
+  AuthVerifyEmailRoute: typeof AuthVerifyEmailRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthVerifyEmailRoute: AuthVerifyEmailRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
-  AuthRoute: AuthRoute,
+  AuthRoute: AuthRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

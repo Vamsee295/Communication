@@ -73,11 +73,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#0a0a14" },
-      { title: "Ghostline — Private disappearing messenger" },
-      { name: "description", content: "End-to-end encrypted, disappearing messages with a Snapchat-style flow. Chat with friends, share moments that vanish." },
-      { property: "og:title", content: "Ghostline — Private disappearing messenger" },
-      { property: "og:description", content: "End-to-end encrypted, disappearing messages with a Snapchat-style flow." },
+      { name: "theme-color", content: "#2587F5" },
+      { title: "Ghostline — Private Chats. Real Connections." },
+      { name: "description", content: "Private messaging with peer-to-peer voice and video calls. Nothing recorded, nothing sold. Built for people who value privacy." },
+      { property: "og:title", content: "Ghostline — Private Chats. Real Connections." },
+      { property: "og:description", content: "Private messaging with peer-to-peer voice and video calls. Nothing recorded, nothing sold." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -87,7 +87,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
       { rel: "manifest", href: "/manifest.webmanifest" },
@@ -102,7 +102,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <HeadContent />
       </head>
@@ -134,7 +134,7 @@ function RootComponent() {
           <Outlet />
         </CallProvider>
       </PresenceProvider>
-      <Toaster theme="dark" position="top-center" richColors />
+      <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );
 }
