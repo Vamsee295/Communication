@@ -74,6 +74,7 @@ export function createServices(
       repos.messages,
       policies.conversations,
       policies.messages,
+      repos.conversations,
     ),
     stars: new StarService(
       userId,

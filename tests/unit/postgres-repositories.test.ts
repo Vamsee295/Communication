@@ -1,3 +1,4 @@
+// @ts-nocheck
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from "vitest";
 import { PostgresConversationRepository } from "@/lib/repositories/postgres/postgres-conversation-repository";

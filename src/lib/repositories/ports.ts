@@ -10,7 +10,12 @@ import type {
   Device,
   Friendship,
   FriendProfile,
+  GroupAction,
+  GroupAdminAction,
+  GroupInviteLink,
   GroupMemberRole,
+  GroupPermissions,
+  MemberRestriction,
   Message,
   MessageEdit,
   MessageReceipt,
@@ -61,6 +66,40 @@ export interface ConversationRepository {
   removeMember(conversationId: string, userId: string): Promise<void>;
   updateMemberRole(conversationId: string, userId: string, role: GroupMemberRole): Promise<void>;
   updateGroupTitle(conversationId: string, title: string): Promise<void>;
+  updateGroupDescription(conversationId: string, description: string): Promise<void>;
+  updateGroupAvatar(conversationId: string, avatarUrl: string | null): Promise<void>;
+  getGroupPermissions(conversationId: string): Promise<GroupPermissions | null>;
+  setGroupPermissions(
+    conversationId: string,
+    perms: Partial<Omit<GroupPermissions, "conversation_id" | "updated_at">>,
+  ): Promise<GroupPermissions>;
+  getMemberRestriction(conversationId: string, userId: string): Promise<MemberRestriction | null>;
+  listMemberRestrictions(conversationId: string): Promise<MemberRestriction[]>;
+  setMemberRestriction(
+    conversationId: string,
+    userId: string,
+    restrictedBy: string,
+    perms: Partial<Record<GroupAction, boolean>>,
+    restrictedUntil: string | null,
+  ): Promise<MemberRestriction>;
+  removeMemberRestriction(conversationId: string, userId: string): Promise<void>;
+  createInviteLink(
+    conversationId: string,
+    createdBy: string,
+    expiresAt?: string | null,
+    maxUses?: number | null,
+  ): Promise<GroupInviteLink>;
+  revokeInviteLink(conversationId: string, linkId: string): Promise<void>;
+  listInviteLinks(conversationId: string): Promise<GroupInviteLink[]>;
+  joinViaInviteLink(token: string, userId: string): Promise<{ conversation_id: string }>;
+  logAdminAction(
+    conversationId: string,
+    actorId: string,
+    action: string,
+    targetUserId?: string | null,
+    metadata?: Record<string, any> | null,
+  ): Promise<void>;
+  listAdminActions(conversationId: string, limit?: number): Promise<GroupAdminAction[]>;
   listMyMemberships(userId: string): Promise<ConversationMemberFlags[]>;
   getSummaries(ids: string[]): Promise<Array<Conversation>>;
   listMembers(conversationIds: string[]): Promise<MemberRow[]>;
@@ -72,6 +111,8 @@ export interface ConversationRepository {
   ): Promise<void>;
   updateLastRead(userId: string, conversationId: string, lastReadAt: string): Promise<void>;
   leave(userId: string, conversationId: string): Promise<void>;
+  keepVanishSessionAlive(conversationId: string): Promise<void>;
+  setDisappearingMessages(conversationId: string, enabled: boolean): Promise<void>;
 }
 
 export type InsertMessage = {
@@ -81,6 +122,7 @@ export type InsertMessage = {
   client_id?: string | null;
   reply_to_id?: string | null;
   forwarded_from_id?: string | null;
+  is_vanish?: boolean;
 };
 
 export interface MessageRepository {
@@ -92,6 +134,7 @@ export interface MessageRepository {
   updateBody(id: string, body: string): Promise<Message>;
   /** Current product behavior: hard DELETE (not deleted_at). */
   hardDelete(id: string): Promise<void>;
+  deleteVanishMessages(conversationId: string): Promise<void>;
   hideForUser(userId: string, messageId: string): Promise<void>;
   listHiddenIds(userId: string, messageIds: string[]): Promise<string[]>;
   searchInConversation(conversationId: string, needle: string): Promise<Message[]>;
@@ -140,7 +183,8 @@ export interface DeviceRepository {
     revoked_at: null;
   }): Promise<Device>;
   listForUser(userId: string): Promise<Device[]>;
-  revoke(userId: string, deviceId: string, revokedAt: string): Promise<void>;
+  getByKey(userId: string, deviceKey: string): Promise<Device | null>;
+  revoke(userId: string, deviceId: string, revokedAt: string): Promise<{ id: string; device_key: string } | null>;
 }
 
 export interface CallRepository {
@@ -162,6 +206,7 @@ export interface CallRepository {
     },
   ): Promise<void>;
   listForUser(userId: string, limit: number): Promise<Call[]>;
+  deleteFromHistory(callId: string, userId: string): Promise<void>;
 }
 
 export interface PrekeyRepository {

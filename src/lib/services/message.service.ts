@@ -4,6 +4,7 @@ import type { ChatProfile, GlobalSearchHit, Message } from "@/lib/domain/types";
 import type { RateLimiter } from "@/lib/ports/rate-limit";
 import type { ConversationRepository, MessageRepository, ProfileRepository } from "@/lib/repositories/ports";
 import type { IConversationPolicy, IMessagePolicy } from "@/lib/auth/authorization";
+import { canPerformGroupAction } from "@/lib/auth/group-permissions";
 
 export class MessageService {
   constructor(
@@ -72,6 +73,23 @@ export class MessageService {
     // 1. Verify caller belongs to the target conversation
     if (this.conversationPolicy) {
       await this.conversationPolicy.requireMembership(this.userId, input.conversation_id);
+    }
+
+    // 2. Check group permissions if it's a group
+    if (this.conversations?.getById) {
+      const conv = await this.conversations.getById(input.conversation_id);
+      if (conv?.kind === "group") {
+        const members = (await this.conversations.listMembers([input.conversation_id])) ?? [];
+        const me = members.find((m) => m.user_id === this.userId);
+        const myRole = me?.role ?? "member";
+        const [groupPerms, myRestriction] = await Promise.all([
+          this.conversations.getGroupPermissions ? this.conversations.getGroupPermissions(input.conversation_id) : null,
+          this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(input.conversation_id, this.userId) : null,
+        ]);
+        if (!canPerformGroupAction(myRole, "send_messages", groupPerms, myRestriction)) {
+          throw new AuthorizationError("You do not have permission to send messages in this group");
+        }
+      }
     }
 
     // 2. If replying, verify parent message belongs to the same conversation

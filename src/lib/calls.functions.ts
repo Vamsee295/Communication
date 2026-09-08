@@ -49,3 +49,8 @@ export const updateCallStatus = createServerFn({ method: "POST" })
 export const listCalls = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<CallHistoryItem[]> => app(context).calls.listHistory());
+
+export const deleteCallFromHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ call_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).calls.deleteFromHistory(data.call_id));

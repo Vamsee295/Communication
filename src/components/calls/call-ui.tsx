@@ -49,12 +49,12 @@ export function IncomingCallDialog({
 
   return (
     <div 
-      className="fixed inset-0 z-[100] grid place-items-center bg-[#0B1B33]/40 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[100] grid place-items-center bg-black/40 p-4 backdrop-blur-md"
       role="dialog"
       aria-modal="true"
       aria-labelledby="incoming-call-title"
     >
-      <div className="animate-rise-in w-full max-w-sm rounded-[28px] border border-white/80 bg-white/95 p-7 text-center shadow-[0_25px_60px_-15px_rgba(20,103,216,0.2),0_0_0_1px_rgba(220,232,245,0.7)] backdrop-blur-2xl">
+      <div className="animate-rise-in w-full max-w-sm rounded-[28px] border border-border bg-background/95 p-7 text-center shadow-2xl backdrop-blur-2xl">
         <div className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3.5 py-1 text-[11px] font-bold uppercase tracking-wider text-primary">
           <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
           Incoming {type === "video" ? "Video" : "Voice"} Call
@@ -69,7 +69,7 @@ export function IncomingCallDialog({
           </div>
         </div>
 
-        <h2 id="incoming-call-title" className="text-2xl font-extrabold tracking-tight text-[#0B1B33]">
+        <h2 id="incoming-call-title" className="text-2xl font-extrabold tracking-tight text-foreground">
           {peerName(peer)}
         </h2>
         {peer?.username && (
@@ -115,6 +115,8 @@ function stateLabel(state: string, seconds: number, name: string, error: string 
   switch (state) {
     case "OUTGOING":
       return `Calling ${name}…`;
+    case "RINGING":
+      return `Ringing…`;
     case "CONNECTING":
       return "Connecting…";
     case "CONNECTED":
@@ -240,7 +242,7 @@ export function CallOverlay({
               "press grid h-14 w-14 place-items-center rounded-full border transition-all hover:scale-105 active:scale-95",
               muted
                 ? "border-red-500 bg-red-500/20 text-red-400"
-                : "border-white/20 bg-white/10 text-white hover:bg-white/20",
+                : "border-border bg-surface-2 text-foreground hover:bg-muted",
             ].join(" ")}
             aria-label={muted ? "Unmute" : "Mute"}
           >
@@ -259,7 +261,7 @@ export function CallOverlay({
               "press grid h-14 w-14 place-items-center rounded-full border transition-all hover:scale-105 active:scale-95",
               cameraOff
                 ? "border-red-500 bg-red-500/20 text-red-400"
-                : "border-white/20 bg-white/10 text-white hover:bg-white/20",
+                : "border-border bg-surface-2 text-foreground hover:bg-muted",
             ].join(" ")}
             aria-label={cameraOff ? "Turn camera on" : "Turn camera off"}
           >
@@ -277,7 +279,7 @@ export function CallOverlay({
 
       {/* Top security header */}
       <div className="flex items-center justify-between px-6 pt-[max(1.5rem,env(safe-area-inset-top))] sm:px-10">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#DCE8F5] bg-white/85 px-3.5 py-1.5 text-xs font-medium text-[#64748B] shadow-xs backdrop-blur-md">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background/85 px-3.5 py-1.5 text-xs font-medium text-muted-foreground shadow-xs backdrop-blur-md">
           <Lock className="h-3.5 w-3.5 text-primary" />
           <span>Ghostline Private Call · E2EE</span>
         </div>
@@ -293,7 +295,7 @@ export function CallOverlay({
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
         {/* Pulsing Avatar */}
         <div className="relative mb-6 flex items-center justify-center">
-          {(state === "OUTGOING" || state === "CONNECTING") && (
+          {(state === "OUTGOING" || state === "RINGING" || state === "CONNECTING") && (
             <>
               <span className="absolute -inset-4 rounded-full bg-primary/10 animate-ping opacity-60" />
               <span className="absolute -inset-2 rounded-full bg-primary/15 animate-pulse" />
@@ -302,14 +304,14 @@ export function CallOverlay({
           <Avatar peer={call.peer} size="lg" />
         </div>
 
-        <h2 className="text-3xl font-black tracking-tight text-[#0B1B33]">
+        <h2 className="text-3xl font-black tracking-tight text-foreground">
           {name}
         </h2>
         {call.peer?.username && (
           <p className="mt-1 text-sm font-medium text-[#64748B]">@{call.peer.username}</p>
         )}
 
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#DCE8F5] bg-white px-4 py-1.5 shadow-xs">
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-background px-4 py-1.5 shadow-xs">
           <p className="text-sm font-bold tabular-nums text-primary">
             {stateLabel(state, seconds, name, error)}
           </p>
@@ -327,7 +329,7 @@ export function CallOverlay({
               "press grid h-16 w-16 place-items-center rounded-full border shadow-md transition-all hover:scale-105 active:scale-95",
               muted
                 ? "border-red-200 bg-red-50 text-red-600 shadow-red-500/10"
-                : "border-[#DCE8F5] bg-white text-[#0B1B33] hover:bg-slate-50 shadow-slate-200/50",
+                : "border-border bg-surface text-foreground hover:bg-muted shadow-sm",
             ].join(" ")}
             aria-label={muted ? "Unmute" : "Mute"}
           >

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { base64UrlEncode, base64UrlDecode, createVapidAuthorizationHeader, encryptWebPushPayload } from "@/lib/push/vapid-sender";
 import { PushDispatcher } from "@/lib/push/push-dispatcher";

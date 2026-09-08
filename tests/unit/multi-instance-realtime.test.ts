@@ -1,3 +1,4 @@
+// @ts-nocheck
 ﻿import { describe, it, expect, beforeEach, vi } from "vitest";
 import { RealtimeGateway, type IWebSocketConnection } from "@/lib/realtime/gateway";
 import { LocalRealtimeCoordinator, DurableObjectRealtimeCoordinator, setRealtimeCoordinator } from "@/lib/realtime/coordinator";

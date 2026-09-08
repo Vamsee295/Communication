@@ -93,4 +93,9 @@ export class CallService {
       };
     });
   }
+
+  async deleteFromHistory(callId: string): Promise<{ ok: true }> {
+    await this.calls.deleteFromHistory(callId, this.userId);
+    return { ok: true };
+  }
 }

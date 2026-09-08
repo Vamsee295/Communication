@@ -1,6 +1,8 @@
 import type { Message, Pin } from "@/lib/domain/types";
-import type { MessageRepository, PinRepository } from "@/lib/repositories/ports";
+import type { ConversationRepository, MessageRepository, PinRepository } from "@/lib/repositories/ports";
 import type { IConversationPolicy, IMessagePolicy } from "@/lib/auth/authorization";
+import { AuthorizationError } from "@/lib/domain/errors";
+import { canPerformGroupAction } from "@/lib/auth/group-permissions";
 
 export class PinService {
   constructor(
@@ -9,6 +11,7 @@ export class PinService {
     private readonly messages: MessageRepository,
     private readonly conversationPolicy?: IConversationPolicy,
     private readonly messagePolicy?: IMessagePolicy,
+    private readonly conversations?: ConversationRepository,
   ) {}
 
   async list(conversationId: string): Promise<{ pins: Pin[]; messages: Message[] }> {
@@ -24,6 +27,21 @@ export class PinService {
   async pin(conversationId: string, messageId: string): Promise<{ ok: true }> {
     if (this.conversationPolicy) {
       await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    if (this.conversations) {
+      const conv = await this.conversations.getById(conversationId);
+      if (conv.kind === "group") {
+        const members = await this.conversations.listMembers([conversationId]);
+        const me = members.find((m) => m.user_id === this.userId);
+        const myRole = me?.role ?? "member";
+        const [groupPerms, myRestriction] = await Promise.all([
+          this.conversations.getGroupPermissions ? this.conversations.getGroupPermissions(conversationId) : null,
+          this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(conversationId, this.userId) : null,
+        ]);
+        if (!canPerformGroupAction(myRole, "pin_messages", groupPerms, myRestriction)) {
+          throw new AuthorizationError("You do not have permission to pin messages in this group");
+        }
+      }
     }
     if (this.messagePolicy) {
       // Must have access to the message and it must belong to this conversation

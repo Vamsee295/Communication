@@ -34,7 +34,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <CommandPalette />
 
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-white px-3 py-5 lg:flex">
+      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-border bg-sidebar px-3 py-5 lg:flex">
         {/* Logo */}
         <div className="mb-6 flex items-center gap-2.5 px-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-white shadow-md shadow-primary/25">
@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Mobile bottom nav */}
       <nav className="fixed inset-x-0 bottom-0 z-40 lg:hidden">
-        <div className="glass border-t border-border bg-white/90">
+        <div className="glass border-t border-border">
           <div className="mx-auto flex max-w-md items-center justify-around px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1">
             {tabs.map((tab) => {
               const active = isActive(tab.to);

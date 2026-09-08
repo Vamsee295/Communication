@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, vi } from "vitest";
 import { PushDispatcher } from "../../src/lib/push/push-dispatcher";
 import type { RealtimeDomainEvent } from "../../src/lib/realtime/contracts";

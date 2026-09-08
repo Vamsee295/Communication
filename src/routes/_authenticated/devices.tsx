@@ -24,6 +24,23 @@ function DevicesPage() {
 
   const revoke = useMutation({
     mutationFn: (device_id: string) => doRevoke({ data: { device_id } }),
+    onMutate: async (device_id) => {
+      await qc.cancelQueries({ queryKey: ["devices"] });
+      const previous = qc.getQueryData<any[]>(["devices"]);
+      if (previous) {
+        qc.setQueryData(
+          ["devices"],
+          previous.map((d) => (d.id === device_id ? { ...d, revoked_at: new Date().toISOString() } : d)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) {
+        qc.setQueryData(["devices"], context.previous);
+      }
+      toast.error("Failed to sign out device");
+    },
     onSuccess: () => {
       toast.success("Signed out that device");
       qc.invalidateQueries({ queryKey: ["devices"] });

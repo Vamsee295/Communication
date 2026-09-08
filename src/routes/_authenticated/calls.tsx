@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Phone,
   PhoneIncoming,
@@ -10,9 +10,11 @@ import {
   Video,
   Search,
   X,
+  Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
-import { listCalls, type CallHistoryItem } from "@/lib/calls.functions";
+import { listCalls, deleteCallFromHistory, type CallHistoryItem } from "@/lib/calls.functions";
 import { listConversations } from "@/lib/chat.functions";
 import { useCalls } from "@/components/calls/call-provider";
 import { formatDuration } from "@/lib/webrtc-config";
@@ -53,11 +55,26 @@ function when(iso: string) {
 function CallsPage() {
   const fetchCalls = useServerFn(listCalls);
   const fetchConversations = useServerFn(listConversations);
+  const doDelete = useServerFn(deleteCallFromHistory);
   const { startCall } = useCalls();
+  const qc = useQueryClient();
   const [q, setQ] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const calls = useQuery({ queryKey: ["calls"], queryFn: () => fetchCalls(), refetchInterval: 20000 });
   const conversations = useQuery({ queryKey: ["conversations"], queryFn: () => fetchConversations() });
+
+  const deleteMut = useMutation({
+    mutationFn: (callId: string) => doDelete({ data: { call_id: callId } }),
+    onSuccess: () => {
+      toast.success("Call removed from history");
+      qc.invalidateQueries({ queryKey: ["calls"] });
+      setDeleteTargetId(null);
+      setSelectedId(null);
+    },
+    onError: () => toast.error("Could not delete call"),
+  });
 
   const convByPeer = useMemo(() => {
     const map = new Map<string, string>();
@@ -128,55 +145,193 @@ function CallsPage() {
                 : c.direction === "incoming"
                   ? PhoneIncoming
                   : PhoneOutgoing;
+              const isSelected = selectedId === c.id;
+
               return (
-                <li
+                <CallRow
                   key={c.id}
-                  className="group flex items-center gap-3 rounded-xl px-3 py-3 transition hover:bg-surface-2/70"
-                >
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface-2 text-sm font-bold text-primary ring-1 ring-border">
-                    {name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className={`truncate text-[15px] font-semibold ${missed ? "text-destructive" : ""}`}>
-                      {name}
-                    </p>
-                    <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-muted-foreground">
-                      <Icon className="h-3.5 w-3.5 shrink-0" />
-                      {label(c)} · {when(c.created_at)}
-                      {c.status === "ended" && !!c.duration_seconds && c.duration_seconds > 0 && (
-                        <span className="tabular-nums"> · {formatDuration(c.duration_seconds)}</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
-                    <button
-                      onClick={() => ring(c, "voice")}
-                      className="grid h-9 w-9 place-items-center rounded-full hover:bg-secondary hover:text-primary"
-                      aria-label={`Voice call ${name}`}
-                    >
-                      <Phone className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => ring(c, "video")}
-                      className="grid h-9 w-9 place-items-center rounded-full hover:bg-secondary hover:text-primary"
-                      aria-label={`Video call ${name}`}
-                    >
-                      <Video className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <span className="shrink-0 text-muted-foreground lg:hidden">
-                    {c.call_type === "video" ? (
-                      <Video className="h-4 w-4" />
-                    ) : (
-                      <Phone className="h-4 w-4" />
-                    )}
-                  </span>
-                </li>
+                  c={c}
+                  name={name}
+                  missed={missed}
+                  Icon={Icon}
+                  isSelected={isSelected}
+                  onSelect={() => setSelectedId(isSelected ? null : c.id)}
+                  onDeselect={() => setSelectedId(null)}
+                  onRingVoice={() => ring(c, "voice")}
+                  onRingVideo={() => ring(c, "video")}
+                  onDelete={() => setDeleteTargetId(c.id)}
+                />
               );
             })}
           </ul>
         )}
       </div>
+
+      {/* Dismiss overlay when something selected */}
+      {selectedId && (
+        <div
+          className="fixed inset-0 z-10"
+          onClick={() => setSelectedId(null)}
+          aria-hidden
+        />
+      )}
+
+      {/* Delete confirmation sheet */}
+      {deleteTargetId && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 animate-fade-in"
+          onClick={() => setDeleteTargetId(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-border bg-popover p-5 shadow-2xl animate-rise-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-[15px] font-bold text-foreground">Remove from history?</h2>
+            <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              This call will be permanently removed from your call history.
+            </p>
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button
+                onClick={() => setDeleteTargetId(null)}
+                className="h-10 rounded-xl border border-border px-4 text-sm font-semibold text-foreground transition hover:bg-surface-2"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteMut.mutate(deleteTargetId)}
+                disabled={deleteMut.isPending}
+                className="h-10 rounded-xl bg-destructive px-4 text-sm font-semibold text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
+              >
+                {deleteMut.isPending ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppShell>
+  );
+}
+
+function CallRow({
+  c,
+  name,
+  missed,
+  Icon,
+  isSelected,
+  onSelect,
+  onDeselect,
+  onRingVoice,
+  onRingVideo,
+  onDelete,
+}: {
+  c: CallHistoryItem;
+  name: string;
+  missed: boolean;
+  Icon: React.ElementType;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDeselect: () => void;
+  onRingVoice: () => void;
+  onRingVideo: () => void;
+  onDelete: () => void;
+}) {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = useRef(false);
+
+  const startLongPress = () => {
+    didLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      onSelect();
+    }, 500);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  return (
+    <li className="relative">
+      {/* Long-press / right-click action menu */}
+      {isSelected && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={onDeselect} aria-hidden />
+          <div className="absolute right-3 top-12 z-40 w-44 overflow-hidden rounded-2xl border border-border bg-popover py-1.5 shadow-xl shadow-black/10">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeselect();
+                onDelete();
+              }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-destructive transition hover:bg-surface-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+
+      <div
+        role="button"
+        tabIndex={0}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onSelect();
+        }}
+        onTouchStart={startLongPress}
+        onTouchEnd={cancelLongPress}
+        onTouchMove={cancelLongPress}
+        onKeyDown={(e) => {
+          if (e.key === "Delete" || e.key === "Backspace") onDelete();
+        }}
+        className={[
+          "group flex items-center gap-3 rounded-xl px-3 py-3 transition select-none",
+          isSelected ? "bg-surface-2" : "hover:bg-surface-2/70",
+        ].join(" ")}
+      >
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface-2 text-sm font-bold text-primary ring-1 ring-border">
+          {name.charAt(0).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className={`truncate text-[15px] font-semibold ${missed ? "text-destructive" : ""}`}>
+            {name}
+          </p>
+          <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-muted-foreground">
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            {label(c)} · {when(c.created_at)}
+            {c.status === "ended" && !!c.duration_seconds && c.duration_seconds > 0 && (
+              <span className="tabular-nums"> · {formatDuration(c.duration_seconds)}</span>
+            )}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">
+          <button
+            onClick={onRingVoice}
+            className="grid h-9 w-9 place-items-center rounded-full hover:bg-secondary hover:text-primary"
+            aria-label={`Voice call ${name}`}
+          >
+            <Phone className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onRingVideo}
+            className="grid h-9 w-9 place-items-center rounded-full hover:bg-secondary hover:text-primary"
+            aria-label={`Video call ${name}`}
+          >
+            <Video className="h-4 w-4" />
+          </button>
+        </div>
+        <span className="shrink-0 text-muted-foreground lg:hidden">
+          {c.call_type === "video" ? (
+            <Video className="h-4 w-4" />
+          ) : (
+            <Phone className="h-4 w-4" />
+          )}
+        </span>
+      </div>
+    </li>
   );
 }

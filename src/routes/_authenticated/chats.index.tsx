@@ -39,7 +39,7 @@ import {
 } from "@/lib/chat.functions";
 import { listFriendships, type FriendshipRow } from "@/lib/friendships.functions";
 import { getDeviceKey, guessDeviceName } from "@/lib/device-key";
-import { usePresence, statusLabel } from "@/components/presence-provider";
+import { usePresence } from "@/components/presence-provider";
 import { realtimeService } from "@/lib/realtime/create-realtime";
 
 export const Route = createFileRoute("/_authenticated/chats/")({
@@ -77,7 +77,7 @@ function ChatsPage() {
   const doMarkRead = useServerFn(markRead);
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { onlineIds } = usePresence();
+  const { isUserOnline } = usePresence();
 
   const [showNewGroup, setShowNewGroup] = useState(false);
 
@@ -198,7 +198,7 @@ function ChatsPage() {
       key={c.id}
       c={c}
       meId={profile.data?.id}
-      online={!!c.other?.id && onlineIds.has(c.other.id)}
+      online={isUserOnline(c.other?.id)}
       menuOpen={menuFor === c.id}
       onOpenMenu={(open) => setMenuFor(open ? c.id : null)}
       onOpen={() => {
@@ -293,8 +293,8 @@ function ChatsPage() {
     <AppShell>
       <div className="flex min-h-screen w-full">
         {/* Conversation list column */}
-        <section className="flex min-w-0 flex-1 flex-col bg-white lg:max-w-[400px] lg:border-r lg:border-border">
-          <header className="sticky top-0 z-20 border-b border-border bg-white/95 px-4 pb-3 pt-6 backdrop-blur-xl lg:pt-5">
+        <section className="flex min-w-0 flex-1 flex-col bg-background lg:max-w-[400px] lg:border-r lg:border-border">
+          <header className="sticky top-0 z-20 border-b border-border bg-background/80 px-4 pb-3 pt-6 backdrop-blur-xl lg:pt-5">
             <div className="flex items-center justify-between">
               <h1 className="text-[22px] font-extrabold tracking-tight text-foreground">Chats</h1>
               <div className="flex items-center gap-2">
@@ -339,7 +339,7 @@ function ChatsPage() {
                   <X className="h-3.5 w-3.5" />
                 </button>
               ) : (
-                <kbd className="hidden shrink-0 rounded-md border border-border bg-white px-1.5 py-0.5 text-[10px] text-muted-foreground lg:block">
+                <kbd className="hidden shrink-0 rounded-md border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-muted-foreground lg:block">
                   ⌘K
                 </kbd>
               )}
@@ -371,13 +371,19 @@ function ChatsPage() {
 
       {confirm && (
         <ConfirmDialog
-          title={confirm.kind === "delete" ? "Delete this chat?" : "Block this contact?"}
+          title={
+            confirm.kind === "delete"
+              ? (confirm.conv.kind === "group" ? "Leave this group?" : "Delete this chat?")
+              : "Block this contact?"
+          }
           body={
             confirm.kind === "delete"
-              ? "The conversation is removed from your list. Messages you already sent stay with the other person."
+              ? (confirm.conv.kind === "group"
+                  ? "You will leave this group conversation. You will no longer receive new messages from this group."
+                  : "The conversation is removed from your list. Messages you already sent stay with the other person.")
               : "They won't be able to message or call you until you unblock them."
           }
-          action={confirm.kind === "delete" ? "Delete" : "Block"}
+          action={confirm.kind === "delete" ? (confirm.conv.kind === "group" ? "Leave" : "Delete") : "Block"}
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
             if (confirm.kind === "delete") leave.mutate(confirm.conv.id);
@@ -468,16 +474,34 @@ function ChatRow({
   onDelete: () => void;
   onBlock: () => void;
 }) {
-  const name = c.kind === "group"
+  const isGroup = c.kind === "group";
+  const name = isGroup
     ? (c.title ?? "Group chat")
     : (c.other?.display_name ?? c.other?.username ?? "Ghost");
   const last = c.last_message;
   const mine = last?.sender_id === meId;
-  const preview = last ? (last.deleted_at ? "Message deleted" : last.body) : "Say hi 👋";
+
+  // Prefix sender name in group message previews when sent by another member
+  const sender = isGroup && !mine && !last?.deleted_at && c.members?.find((m) => m.id === last?.sender_id);
+  const senderName = sender ? (sender.display_name ?? sender.username) : null;
+
+  const preview = last
+    ? (last.deleted_at
+        ? "Message deleted"
+        : (senderName ? `${senderName}: ${last.body}` : last.body))
+    : null;
+
   const ts = last
     ? new Date(last.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : "";
-  const status = statusLabel(online, c.other?.last_seen);
+
+  const { getUserStatusLabel } = usePresence();
+  // Groups must NEVER display individual presence status or "Offline"
+  const directStatus = !isGroup ? getUserStatusLabel(c.other?.id, c.id, c.other?.last_seen) : "";
+  const memberCount = Math.max(c.member_count ?? 0, c.members?.length ?? 0);
+  const groupMeta = `${memberCount} ${memberCount === 1 ? "member" : "members"}`;
+
+  const subtitle = preview ?? (isGroup ? groupMeta : (directStatus || "Say hi 👋"));
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const item = (icon: React.ReactNode, label: string, run: () => void, danger = false) => (
@@ -518,21 +542,57 @@ function ChatRow({
         }}
         className="group flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-150 hover:bg-surface-2/70 active:bg-surface-2"
       >
-        {/* Avatar */}
+        {/* Avatar: Direct = Circular (rounded-full), Group = Rounded-Square (rounded-2xl) */}
         <div className="relative shrink-0">
-          <div className="grid h-12 w-12 place-items-center rounded-full bg-primary/12 text-[15px] font-bold text-primary shadow-sm">
-            {name.charAt(0).toUpperCase()}
-          </div>
-          {online && (
-            <span className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-white bg-success" />
+          {isGroup ? (
+            c.avatar_url ? (
+              <img
+                src={c.avatar_url}
+                alt={name}
+                className="h-12 w-12 rounded-2xl object-cover ring-1 ring-border shadow-sm"
+              />
+            ) : (
+              <div
+                className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/12 text-primary shadow-sm ring-1 ring-border/50"
+                title={`Group: ${name}`}
+              >
+                <UsersRound className="h-6 w-6 text-primary" aria-hidden="true" />
+              </div>
+            )
+          ) : (
+            <>
+              {c.other?.avatar_url ? (
+                <img
+                  src={c.other.avatar_url}
+                  alt={name}
+                  className="h-12 w-12 rounded-full object-cover ring-1 ring-border shadow-sm"
+                />
+              ) : (
+                <div className="grid h-12 w-12 place-items-center rounded-full bg-primary/12 text-[15px] font-bold text-primary shadow-sm ring-1 ring-border/50">
+                  {name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              {online && (
+                <span
+                  className="absolute bottom-0.5 right-0.5 h-3 w-3 rounded-full border-2 border-background bg-success"
+                  aria-label="Online"
+                />
+              )}
+            </>
           )}
         </div>
 
         {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <p className="flex min-w-0 items-center gap-1 truncate text-[14px] font-semibold text-foreground">
+            <p className="flex min-w-0 items-center gap-1.5 truncate text-[14px] font-semibold text-foreground">
               {c.pinned && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              {isGroup && (
+                <UsersRound
+                  className="h-3.5 w-3.5 shrink-0 text-primary/70"
+                  aria-hidden="true"
+                />
+              )}
               <span className="truncate">{name}</span>
               {c.muted && <BellOff className="h-3 w-3 shrink-0 text-muted-foreground" />}
             </p>
@@ -555,7 +615,7 @@ function ChatRow({
                 c.unread > 0 ? "font-medium text-foreground" : "text-muted-foreground",
               ].join(" ")}
             >
-              {last ? preview : status}
+              {subtitle}
             </p>
             {c.unread > 0 && (
               <span
@@ -584,7 +644,7 @@ function ChatRow({
       {menuOpen && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => onOpenMenu(false)} />
-          <div className="absolute right-3 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-border bg-white py-1.5 shadow-xl shadow-black/10">
+          <div className="absolute right-3 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground py-1.5 shadow-xl shadow-black/10">
             {item(<MailOpen className="h-4 w-4" />, "Mark as unread", onUnread)}
             {item(
               c.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />,
@@ -598,8 +658,14 @@ function ChatRow({
             )}
             {item(<Archive className="h-4 w-4" />, "Archive", onArchive)}
             <div className="my-1 h-px bg-border" />
-            {item(<Trash2 className="h-4 w-4" />, "Delete chat", onDelete, true)}
-            {item(<ShieldBan className="h-4 w-4" />, "Block contact", onBlock, true)}
+            {isGroup ? (
+              item(<Trash2 className="h-4 w-4" />, "Leave group", onDelete, true)
+            ) : (
+              <>
+                {item(<Trash2 className="h-4 w-4" />, "Delete chat", onDelete, true)}
+                {item(<ShieldBan className="h-4 w-4" />, "Block contact", onBlock, true)}
+              </>
+            )}
           </div>
         </>
       )}

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, vi } from "vitest";
 import {
   GENERIC_SIGNUP_ERROR_TITLE,

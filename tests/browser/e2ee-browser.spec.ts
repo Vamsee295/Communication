@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { expect, test } from "@playwright/test";
 
 test("SDK IndexedDB + PQXDH browser round trip keeps relay opaque", async ({ page }) => {

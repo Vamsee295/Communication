@@ -88,8 +88,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const startedAt = useRef<number | null>(null);
   const ringtoneRef = useRef<{ ctx: AudioContext; stop: () => void } | null>(null);
   const myProfileRef = useRef<CallPeer | null>(null);
+  // Mirror incoming in a ref so signaling closures always read the current value
+  // without being listed as a useEffect dependency (which would tear down the channel).
+  const incomingRef = useRef<{ payload: SignalPayload; offer: RTCSessionDescriptionInit } | null>(null);
 
   activeRef.current = active;
+  incomingRef.current = incoming;
 
   /* -------------------- my trusted profile (for signaling) -------------------- */
   const fetchMyProfile = useServerFn(getMyProfile);
@@ -446,20 +450,66 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [incoming, myId, sendSignal, stopRingtone]);
 
   /* ------------------------- inbound signal wiring ---------------------- */
+  //
+  // IMPORTANT: This effect depends ONLY on [myId].
+  //
+  // Previously `incoming` was listed as a dependency, which caused React to tear
+  // down and recreate the Supabase Realtime channel subscription every time an
+  // offer arrived (i.e. the moment `setIncoming()` was called). During the
+  // ~300-1000 ms while the new channel was re-subscribing, ICE candidates sent
+  // by the caller were silently dropped, leaving the PeerConnection stuck in
+  // "checking" forever.
+  //
+  // All mutable values that need to be read inside the handlers are accessed
+  // through stable refs (incomingRef, activeRef, etc.) so no re-subscription
+  // is ever needed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!myId) return;
 
     const unsubscribe = signalingRef.current.listen(myId, {
       onOffer: (p) => {
         if (!p?.sdp || p.from === myId) return;
-        if (activeRef.current || incoming) {
-          void sendSignal(p.from, "call-decline", { call_id: p.call_id, from: myId });
+        // Use ref to avoid stale closure — does not re-run the effect
+        if (activeRef.current || incomingRef.current) {
+          void signalingRef.current.send(p.from, "call-decline", { call_id: p.call_id, from: myId });
           void updateCallStatus({ data: { call_id: p.call_id, status: "missed" } }).catch(() => {});
           return;
         }
         setIncoming({ payload: p, offer: p.sdp });
         setState("RINGING");
-        startRingtone();
+        // Use ref for ringtone — no re-run needed
+        ringtoneRef.current === null && (() => {
+          try {
+            const Ctor =
+              window.AudioContext ??
+              (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+            if (!Ctor) return;
+            const ctx = new Ctor();
+            const gain = ctx.createGain();
+            gain.gain.value = 0.0001;
+            gain.connect(ctx.destination);
+            const osc = ctx.createOscillator();
+            osc.type = "sine";
+            osc.frequency.value = 440;
+            osc.connect(gain);
+            osc.start();
+            let on = false;
+            const interval = setInterval(() => {
+              on = !on;
+              gain.gain.setTargetAtTime(on ? 0.05 : 0.0001, ctx.currentTime, 0.02);
+            }, 700);
+            ringtoneRef.current = {
+              ctx,
+              stop: () => {
+                clearInterval(interval);
+                try { osc.stop(); } catch { /* noop */ }
+                ctx.close().catch(() => {});
+              },
+            };
+            ctx.resume().catch(() => {});
+          } catch { /* best-effort */ }
+        })();
       },
       onAnswer: async (p) => {
         const pc = pcRef.current;
@@ -489,11 +539,32 @@ export function CallProvider({ children }: { children: ReactNode }) {
       onDecline: (p) => {
         if (activeRef.current?.id !== p.call_id || p.from !== activeRef.current?.peerId) return;
         setError("Call declined");
-        finish("DECLINED", false);
+        // Inline finish to avoid dep on the finish callback
+        const call = activeRef.current;
+        const duration = startedAt.current ? Math.round((Date.now() - startedAt.current) / 1000) : 0;
+        ringtoneRef.current?.stop(); ringtoneRef.current = null;
+        if (ringTimer.current) clearTimeout(ringTimer.current);
+        ringTimer.current = null;
+        if (tickTimer.current) clearInterval(tickTimer.current);
+        tickTimer.current = null;
+        pcRef.current?.getSenders().forEach((s) => { try { s.track?.stop(); } catch { /* noop */ } });
+        try { pcRef.current?.close(); } catch { /* noop */ }
+        pcRef.current = null;
+        localStreamRef.current?.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+        setLocalStream(null); setRemoteStream(null);
+        pendingCandidates.current = [];
+        startedAt.current = null;
+        setSeconds(0); setMuted(false); setCameraOff(false);
+        setState("DECLINED");
+        if (call) void updateCallStatus({ data: { call_id: call.id, status: "declined", duration_seconds: duration } }).catch(() => {});
+        setTimeout(() => { setActive(null); setState("IDLE"); }, 1400);
       },
       onEnd: (p) => {
-        if (incoming?.payload.call_id === p.call_id && p.from === incoming.payload.from) {
-          stopRingtone();
+        // Use incomingRef so we never capture a stale value
+        const currentIncoming = incomingRef.current;
+        if (currentIncoming?.payload.call_id === p.call_id && p.from === currentIncoming.payload.from) {
+          ringtoneRef.current?.stop(); ringtoneRef.current = null;
           setIncoming(null);
           setState("IDLE");
           return;
@@ -502,7 +573,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
         const duration = startedAt.current
           ? Math.round((Date.now() - startedAt.current) / 1000)
           : 0;
-        teardown();
+        // Inline teardown to avoid dep on the teardown callback
+        ringtoneRef.current?.stop(); ringtoneRef.current = null;
+        if (ringTimer.current) clearTimeout(ringTimer.current);
+        ringTimer.current = null;
+        if (tickTimer.current) clearInterval(tickTimer.current);
+        tickTimer.current = null;
+        pcRef.current?.getSenders().forEach((s) => { try { s.track?.stop(); } catch { /* noop */ } });
+        try { pcRef.current?.close(); } catch { /* noop */ }
+        pcRef.current = null;
+        localStreamRef.current?.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+        setLocalStream(null); setRemoteStream(null);
+        pendingCandidates.current = [];
+        startedAt.current = null;
+        setSeconds(0); setMuted(false); setCameraOff(false);
         setState("ENDED");
         void updateCallStatus({
           data: { call_id: p.call_id, status: "ended", duration_seconds: duration },
@@ -515,7 +600,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     });
 
     return unsubscribe;
-  }, [finish, incoming, myId, sendSignal, startRingtone, stopRingtone, teardown]);
+  // Only re-subscribe when the authenticated user changes.
+  // All other values are accessed via stable refs.
+  }, [myId]);
 
   /* ---------------------------- cleanup on exit -------------------------- */
   useEffect(() => {

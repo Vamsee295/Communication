@@ -12,13 +12,27 @@ import type {
   ChatProfile,
   ConversationSummary,
   GlobalSearchHit,
+  GroupAction,
+  GroupAdminAction,
+  GroupInviteLink,
   GroupMemberRole,
+  GroupPermissions,
+  MemberRestriction,
   Message,
   Pin,
   Reaction,
 } from "@/lib/domain/types";
 
-export type { ChatProfile, ConversationSummary, GroupMemberRole };
+export type {
+  ChatProfile,
+  ConversationSummary,
+  GroupAction,
+  GroupAdminAction,
+  GroupInviteLink,
+  GroupMemberRole,
+  GroupPermissions,
+  MemberRestriction,
+};
 export type MessageRow = Message;
 export type ReactionRow = Reaction;
 export type PinRow = Pin;
@@ -74,14 +88,162 @@ export const updateGroupTitle = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid(), title: z.string().trim().min(1).max(100) }).parse(data))
   .handler(async ({ data, context }) => app(context).conversations.updateGroupTitle(data.conversation_id, data.title));
 
+export const updateGroupDescription = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid(), description: z.string().trim().max(500) }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.updateGroupDescription(data.conversation_id, data.description));
+
+export const updateGroupAvatar = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid(), avatar_url: z.string().nullable() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.updateGroupAvatar(data.conversation_id, data.avatar_url));
+
+export const getGroupPermissions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.getGroupPermissions(data.conversation_id));
+
+export const setGroupPermissions = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        conversation_id: z.string().uuid(),
+        send_messages: z.boolean().optional(),
+        send_media: z.boolean().optional(),
+        send_files: z.boolean().optional(),
+        send_voice: z.boolean().optional(),
+        send_links: z.boolean().optional(),
+        create_polls: z.boolean().optional(),
+        add_members: z.boolean().optional(),
+        pin_messages: z.boolean().optional(),
+        change_group_info: z.boolean().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { conversation_id, ...perms } = data;
+    return app(context).conversations.setGroupPermissions(conversation_id, perms);
+  });
+
+export const listMemberRestrictions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.listMemberRestrictions(data.conversation_id));
+
+export const setMemberRestriction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        conversation_id: z.string().uuid(),
+        target_user_id: z.string().uuid(),
+        restricted_until: z.string().nullable().optional(),
+        send_messages: z.boolean().optional(),
+        send_media: z.boolean().optional(),
+        send_files: z.boolean().optional(),
+        send_voice: z.boolean().optional(),
+        send_links: z.boolean().optional(),
+        create_polls: z.boolean().optional(),
+        add_members: z.boolean().optional(),
+        pin_messages: z.boolean().optional(),
+        change_group_info: z.boolean().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) => {
+    const { conversation_id, target_user_id, restricted_until, ...perms } = data;
+    return app(context).conversations.setMemberRestriction(
+      conversation_id,
+      target_user_id,
+      perms,
+      restricted_until ?? null,
+    );
+  });
+
+export const removeMemberRestriction = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid(), target_user_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.removeMemberRestriction(data.conversation_id, data.target_user_id));
+
+export const createGroupInviteLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        conversation_id: z.string().uuid(),
+        expires_at: z.string().nullable().optional(),
+        max_uses: z.number().int().min(1).nullable().optional(),
+      })
+      .parse(data),
+  )
+  .handler(async ({ data, context }) =>
+    app(context).conversations.createInviteLink(
+      data.conversation_id,
+      data.expires_at ?? null,
+      data.max_uses ?? null,
+    ),
+  );
+
+export const revokeGroupInviteLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid(), link_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.revokeInviteLink(data.conversation_id, data.link_id));
+
+export const listGroupInviteLinks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.listInviteLinks(data.conversation_id));
+
+export const joinGroupViaInviteLink = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ token: z.string().trim().min(1) }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.joinViaInviteLink(data.token));
+
+export const listGroupAdminActions = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.listAdminActions(data.conversation_id));
+
+async function cleanupVanishMessages() {
+  if (process.env.DATA_REPOSITORY_DRIVER?.toLowerCase() !== "neon") return;
+  try {
+    const db = getPostgresClient();
+    await db`
+      DELETE FROM public.messages
+      WHERE is_vanish = true
+        AND id IN (
+           SELECT m.id
+           FROM public.messages m
+           JOIN public.message_receipts mr ON m.id = mr.message_id
+           WHERE m.is_vanish = true
+             AND mr.user_id != m.sender_id
+             AND mr.read_at IS NOT NULL
+             AND (
+               m.conversation_id IN (SELECT id FROM public.conversations WHERE vanish_session_active_until < NOW() - INTERVAL '30 seconds')
+               OR mr.read_at < NOW() - INTERVAL '5 minutes'
+             )
+        )
+    `;
+  } catch (e) {
+    console.error("Failed to clean up stale vanish messages", e);
+  }
+}
+
 export const listConversations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }): Promise<ConversationSummary[]> => app(context).conversations.list());
+  .handler(async ({ context }): Promise<ConversationSummary[]> => {
+    await cleanupVanishMessages();
+    return app(context).conversations.list();
+  });
 
 export const getConversation = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
-  .handler(async ({ data, context }) => app(context).conversations.get(data.conversation_id));
+  .handler(async ({ data, context }) => {
+    await cleanupVanishMessages();
+    return app(context).conversations.get(data.conversation_id);
+  });
 
 export const listMessages = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -170,6 +332,7 @@ export const sendMessage = createServerFn({ method: "POST" })
         client_id: z.string().max(64).optional(),
         reply_to_id: z.string().uuid().optional().nullable(),
         forwarded_from_id: z.string().uuid().optional().nullable(),
+        is_vanish: z.boolean().optional(),
       })
       .parse(data),
   )
@@ -253,6 +416,49 @@ export const listReactions = createServerFn({ method: "GET" })
   .handler(async ({ data, context }): Promise<ReactionRow[]> =>
     app(context).reactions.listForConversation(data.conversation_id),
   );
+
+export const closeVanishSession = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    // Only participants can do this, so check membership first to prevent abuse
+    await app(context).conversations.get(data.conversation_id);
+    return { ok: true };
+  });
+
+export const pingVanishSession = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    await app(context).conversations.get(data.conversation_id);
+    if (process.env.DATA_REPOSITORY_DRIVER?.toLowerCase() === "neon") {
+       await getPostgresClient()`UPDATE public.conversations SET vanish_session_active_until = NOW() + INTERVAL '30 seconds' WHERE id = ${data.conversation_id}`;
+    }
+    return { ok: true };
+  });
+
+export const finalizeVanishSession = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => {
+    await app(context).conversations.get(data.conversation_id);
+    if (process.env.DATA_REPOSITORY_DRIVER?.toLowerCase() === "neon") {
+       await getPostgresClient()`UPDATE public.conversations SET vanish_session_active_until = NOW() - INTERVAL '1 minute' WHERE id = ${data.conversation_id}`;
+       await cleanupVanishMessages();
+    }
+    return { ok: true };
+  });
+
+export const toggleDisappearingMessages = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid(), enabled: z.boolean() }).parse(data))
+  .handler(async ({ data, context }) => {
+    await app(context).conversations.get(data.conversation_id);
+    if (process.env.DATA_REPOSITORY_DRIVER?.toLowerCase() === "neon") {
+       await app(context).conversations.setDisappearingMessages!(data.conversation_id, data.enabled);
+    }
+    return { ok: true };
+  });
 
 export const listPins = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

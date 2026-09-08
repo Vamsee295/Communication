@@ -41,13 +41,81 @@ export type ConversationKind = "direct" | "group";
 
 export type GroupMemberRole = "owner" | "admin" | "member";
 
+export type GroupAction =
+  | "send_messages"
+  | "send_media"
+  | "send_files"
+  | "send_voice"
+  | "send_links"
+  | "create_polls"
+  | "add_members"
+  | "pin_messages"
+  | "change_group_info";
+
+export type GroupPermissions = {
+  conversation_id: string;
+  send_messages: boolean;
+  send_media: boolean;
+  send_files: boolean;
+  send_voice: boolean;
+  send_links: boolean;
+  create_polls: boolean;
+  add_members: boolean;
+  pin_messages: boolean;
+  change_group_info: boolean;
+  updated_at: string;
+};
+
+export type MemberRestriction = {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  restricted_by: string;
+  send_messages: boolean;
+  send_media: boolean;
+  send_files: boolean;
+  send_voice: boolean;
+  send_links: boolean;
+  create_polls: boolean;
+  add_members: boolean;
+  pin_messages: boolean;
+  change_group_info: boolean;
+  restricted_until: string | null;
+  created_at: string;
+};
+
+export type GroupInviteLink = {
+  id: string;
+  conversation_id: string;
+  created_by: string;
+  token: string;
+  expires_at: string | null;
+  max_uses: number | null;
+  use_count: number;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+export type GroupAdminAction = {
+  id: string;
+  conversation_id: string;
+  actor_id: string;
+  action: string;
+  target_user_id: string | null;
+  metadata: Record<string, any> | null;
+  created_at: string;
+};
+
 export type Conversation = {
   id: string;
   kind: ConversationKind;
   title?: string | null;
+  description?: string | null;
+  avatar_url?: string | null;
   created_by?: string | null;
   created_at?: string;
   last_message_at: string;
+  disappearing_messages_enabled: boolean;
 };
 
 export type ConversationMemberFlags = {
@@ -70,6 +138,7 @@ export type Message = {
   deleted_at: string | null;
   reply_to_id: string | null;
   forwarded_from_id: string | null;
+  is_vanish: boolean;
   attachments?: Attachment[];
 };
 
@@ -120,6 +189,8 @@ export type ConversationSummary = {
   id: string;
   kind: ConversationKind;
   title: string | null;
+  description?: string | null;
+  avatar_url?: string | null;
   created_by: string | null;
   member_count: number;
   members: ChatProfile[];
@@ -131,6 +202,7 @@ export type ConversationSummary = {
   muted: boolean;
   archived: boolean;
   my_role: GroupMemberRole;
+  disappearing_messages_enabled: boolean;
 };
 
 export type GlobalSearchHit = {

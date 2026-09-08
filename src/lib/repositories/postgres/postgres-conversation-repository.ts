@@ -1,6 +1,16 @@
 import type postgres from "postgres";
 import { AuthorizationError, ValidationError } from "@/lib/domain/errors";
-import type { Conversation, ConversationMemberFlags, GroupMemberRole } from "@/lib/domain/types";
+import type {
+  Conversation,
+  ConversationMemberFlags,
+  GroupAction,
+  GroupAdminAction,
+  GroupInviteLink,
+  GroupMemberRole,
+  GroupPermissions,
+  MemberRestriction,
+} from "@/lib/domain/types";
+import { DEFAULT_GROUP_PERMISSIONS } from "@/lib/auth/group-permissions";
 import type { ConversationRepository, MemberRow } from "@/lib/repositories/ports";
 
 export class PostgresConversationRepository implements ConversationRepository {
@@ -99,6 +109,19 @@ export class PostgresConversationRepository implements ConversationRepository {
         `;
       }
 
+      // Initialize default permissions row
+      await tx`
+        INSERT INTO public.group_permissions (conversation_id)
+        VALUES (${newConv.id})
+        ON CONFLICT (conversation_id) DO NOTHING;
+      `;
+
+      // Log initial group creation
+      await tx`
+        INSERT INTO public.group_admin_actions (conversation_id, actor_id, action, metadata)
+        VALUES (${newConv.id}, ${this.userId}, 'group_created', ${JSON.stringify({ title: cleanTitle })}::jsonb);
+      `;
+
       return newConv.id;
     });
 
@@ -116,6 +139,11 @@ export class PostgresConversationRepository implements ConversationRepository {
   async removeMember(conversationId: string, userId: string): Promise<void> {
     await this.db`
       DELETE FROM public.conversation_members
+       WHERE conversation_id = ${conversationId} AND user_id = ${userId};
+    `;
+    // Clean up any member restrictions when removed
+    await this.db`
+      DELETE FROM public.member_restrictions
        WHERE conversation_id = ${conversationId} AND user_id = ${userId};
     `;
   }
@@ -140,6 +168,291 @@ export class PostgresConversationRepository implements ConversationRepository {
     `;
   }
 
+  async updateGroupDescription(conversationId: string, description: string): Promise<void> {
+    const cleanDesc = description.trim();
+    if (cleanDesc.length > 500) {
+      throw new ValidationError("Group description must not exceed 500 characters");
+    }
+    await this.db`
+      UPDATE public.conversations
+         SET description = ${cleanDesc || null}
+       WHERE id = ${conversationId};
+    `;
+  }
+
+  async updateGroupAvatar(conversationId: string, avatarUrl: string | null): Promise<void> {
+    await this.db`
+      UPDATE public.conversations
+         SET avatar_url = ${avatarUrl}
+       WHERE id = ${conversationId};
+    `;
+  }
+
+  async getGroupPermissions(conversationId: string): Promise<GroupPermissions | null> {
+    const rows = await this.db<GroupPermissions[]>`
+      SELECT conversation_id,
+             send_messages, send_media, send_files, send_voice, send_links,
+             create_polls, add_members, pin_messages, change_group_info,
+             updated_at::text
+        FROM public.group_permissions
+       WHERE conversation_id = ${conversationId}
+       LIMIT 1;
+    `;
+    if (rows.length > 0) return rows[0];
+
+    // Return default permissions representation
+    return {
+      conversation_id: conversationId,
+      ...DEFAULT_GROUP_PERMISSIONS,
+      updated_at: new Date().toISOString(),
+    };
+  }
+
+  async setGroupPermissions(
+    conversationId: string,
+    perms: Partial<Omit<GroupPermissions, "conversation_id" | "updated_at">>,
+  ): Promise<GroupPermissions> {
+    const [row] = await this.db<GroupPermissions[]>`
+      INSERT INTO public.group_permissions (
+        conversation_id,
+        send_messages, send_media, send_files, send_voice, send_links,
+        create_polls, add_members, pin_messages, change_group_info,
+        updated_at
+      ) VALUES (
+        ${conversationId},
+        ${perms.send_messages ?? DEFAULT_GROUP_PERMISSIONS.send_messages},
+        ${perms.send_media ?? DEFAULT_GROUP_PERMISSIONS.send_media},
+        ${perms.send_files ?? DEFAULT_GROUP_PERMISSIONS.send_files},
+        ${perms.send_voice ?? DEFAULT_GROUP_PERMISSIONS.send_voice},
+        ${perms.send_links ?? DEFAULT_GROUP_PERMISSIONS.send_links},
+        ${perms.create_polls ?? DEFAULT_GROUP_PERMISSIONS.create_polls},
+        ${perms.add_members ?? DEFAULT_GROUP_PERMISSIONS.add_members},
+        ${perms.pin_messages ?? DEFAULT_GROUP_PERMISSIONS.pin_messages},
+        ${perms.change_group_info ?? DEFAULT_GROUP_PERMISSIONS.change_group_info},
+        now()
+      )
+      ON CONFLICT (conversation_id) DO UPDATE SET
+        send_messages = COALESCE(${perms.send_messages ?? null}, group_permissions.send_messages),
+        send_media = COALESCE(${perms.send_media ?? null}, group_permissions.send_media),
+        send_files = COALESCE(${perms.send_files ?? null}, group_permissions.send_files),
+        send_voice = COALESCE(${perms.send_voice ?? null}, group_permissions.send_voice),
+        send_links = COALESCE(${perms.send_links ?? null}, group_permissions.send_links),
+        create_polls = COALESCE(${perms.create_polls ?? null}, group_permissions.create_polls),
+        add_members = COALESCE(${perms.add_members ?? null}, group_permissions.add_members),
+        pin_messages = COALESCE(${perms.pin_messages ?? null}, group_permissions.pin_messages),
+        change_group_info = COALESCE(${perms.change_group_info ?? null}, group_permissions.change_group_info),
+        updated_at = now()
+      RETURNING conversation_id,
+                send_messages, send_media, send_files, send_voice, send_links,
+                create_polls, add_members, pin_messages, change_group_info,
+                updated_at::text;
+    `;
+    return row;
+  }
+
+  async getMemberRestriction(conversationId: string, userId: string): Promise<MemberRestriction | null> {
+    const rows = await this.db<MemberRestriction[]>`
+      SELECT id, conversation_id, user_id, restricted_by,
+             send_messages, send_media, send_files, send_voice, send_links,
+             create_polls, add_members, pin_messages, change_group_info,
+             restricted_until::text, created_at::text
+        FROM public.member_restrictions
+       WHERE conversation_id = ${conversationId} AND user_id = ${userId}
+       LIMIT 1;
+    `;
+    return rows[0] ?? null;
+  }
+
+  async listMemberRestrictions(conversationId: string): Promise<MemberRestriction[]> {
+    const rows = await this.db<MemberRestriction[]>`
+      SELECT id, conversation_id, user_id, restricted_by,
+             send_messages, send_media, send_files, send_voice, send_links,
+             create_polls, add_members, pin_messages, change_group_info,
+             restricted_until::text, created_at::text
+        FROM public.member_restrictions
+       WHERE conversation_id = ${conversationId}
+       ORDER BY created_at DESC;
+    `;
+    return rows;
+  }
+
+  async setMemberRestriction(
+    conversationId: string,
+    userId: string,
+    restrictedBy: string,
+    perms: Partial<Record<GroupAction, boolean>>,
+    restrictedUntil: string | null,
+  ): Promise<MemberRestriction> {
+    const [row] = await this.db<MemberRestriction[]>`
+      INSERT INTO public.member_restrictions (
+        conversation_id, user_id, restricted_by,
+        send_messages, send_media, send_files, send_voice, send_links,
+        create_polls, add_members, pin_messages, change_group_info,
+        restricted_until, created_at
+      ) VALUES (
+        ${conversationId}, ${userId}, ${restrictedBy},
+        ${perms.send_messages ?? true},
+        ${perms.send_media ?? true},
+        ${perms.send_files ?? true},
+        ${perms.send_voice ?? true},
+        ${perms.send_links ?? true},
+        ${perms.create_polls ?? true},
+        ${perms.add_members ?? true},
+        ${perms.pin_messages ?? true},
+        ${perms.change_group_info ?? true},
+        ${restrictedUntil ? `${restrictedUntil}::timestamptz` : null},
+        now()
+      )
+      ON CONFLICT (conversation_id, user_id) DO UPDATE SET
+        restricted_by = EXCLUDED.restricted_by,
+        send_messages = EXCLUDED.send_messages,
+        send_media = EXCLUDED.send_media,
+        send_files = EXCLUDED.send_files,
+        send_voice = EXCLUDED.send_voice,
+        send_links = EXCLUDED.send_links,
+        create_polls = EXCLUDED.create_polls,
+        add_members = EXCLUDED.add_members,
+        pin_messages = EXCLUDED.pin_messages,
+        change_group_info = EXCLUDED.change_group_info,
+        restricted_until = EXCLUDED.restricted_until
+      RETURNING id, conversation_id, user_id, restricted_by,
+                send_messages, send_media, send_files, send_voice, send_links,
+                create_polls, add_members, pin_messages, change_group_info,
+                restricted_until::text, created_at::text;
+    `;
+    return row;
+  }
+
+  async removeMemberRestriction(conversationId: string, userId: string): Promise<void> {
+    await this.db`
+      DELETE FROM public.member_restrictions
+       WHERE conversation_id = ${conversationId} AND user_id = ${userId};
+    `;
+  }
+
+  async createInviteLink(
+    conversationId: string,
+    createdBy: string,
+    expiresAt: string | null = null,
+    maxUses: number | null = null,
+  ): Promise<GroupInviteLink> {
+    const [row] = await this.db<GroupInviteLink[]>`
+      INSERT INTO public.group_invite_links (
+        conversation_id, created_by, expires_at, max_uses, created_at
+      ) VALUES (
+        ${conversationId}, ${createdBy},
+        ${expiresAt ? `${expiresAt}::timestamptz` : null},
+        ${maxUses},
+        now()
+      )
+      RETURNING id, conversation_id, created_by, token,
+                expires_at::text, max_uses, use_count, revoked_at::text, created_at::text;
+    `;
+    return row;
+  }
+
+  async revokeInviteLink(conversationId: string, linkId: string): Promise<void> {
+    await this.db`
+      UPDATE public.group_invite_links
+         SET revoked_at = now()
+       WHERE id = ${linkId} AND conversation_id = ${conversationId};
+    `;
+  }
+
+  async listInviteLinks(conversationId: string): Promise<GroupInviteLink[]> {
+    const rows = await this.db<GroupInviteLink[]>`
+      SELECT id, conversation_id, created_by, token,
+             expires_at::text, max_uses, use_count, revoked_at::text, created_at::text
+        FROM public.group_invite_links
+       WHERE conversation_id = ${conversationId}
+       ORDER BY created_at DESC;
+    `;
+    return rows;
+  }
+
+  async joinViaInviteLink(token: string, userId: string): Promise<{ conversation_id: string }> {
+    const cleanToken = token.trim();
+    if (!cleanToken) {
+      throw new ValidationError("Invalid invite link token");
+    }
+
+    const links = await this.db<GroupInviteLink[]>`
+      SELECT id, conversation_id, created_by, token,
+             expires_at::text, max_uses, use_count, revoked_at::text, created_at::text
+        FROM public.group_invite_links
+       WHERE token = ${cleanToken}
+       LIMIT 1;
+    `;
+
+    const link = links[0];
+    if (!link) {
+      throw new ValidationError("Invite link not found or invalid");
+    }
+
+    if (link.revoked_at) {
+      throw new ValidationError("This invite link has been revoked");
+    }
+
+    if (link.expires_at && new Date(link.expires_at).getTime() < Date.now()) {
+      throw new ValidationError("This invite link has expired");
+    }
+
+    if (link.max_uses !== null && link.use_count >= link.max_uses) {
+      throw new ValidationError("This invite link has reached its maximum usage limit");
+    }
+
+    // Atomically join and increment use count
+    await this.db.begin(async (tx) => {
+      await tx`
+        UPDATE public.group_invite_links
+           SET use_count = use_count + 1
+         WHERE id = ${link.id};
+      `;
+
+      await tx`
+        INSERT INTO public.conversation_members (conversation_id, user_id, role)
+        VALUES (${link.conversation_id}, ${userId}, 'member')
+        ON CONFLICT (conversation_id, user_id) DO NOTHING;
+      `;
+
+      await tx`
+        INSERT INTO public.group_admin_actions (conversation_id, actor_id, action, metadata)
+        VALUES (${link.conversation_id}, ${userId}, 'member_joined_via_link', ${JSON.stringify({ link_id: link.id })}::jsonb);
+      `;
+    });
+
+    return { conversation_id: link.conversation_id };
+  }
+
+  async logAdminAction(
+    conversationId: string,
+    actorId: string,
+    action: string,
+    targetUserId: string | null = null,
+    metadata: Record<string, any> | null = null,
+  ): Promise<void> {
+    await this.db`
+      INSERT INTO public.group_admin_actions (
+        conversation_id, actor_id, action, target_user_id, metadata, created_at
+      ) VALUES (
+        ${conversationId}, ${actorId}, ${action}, ${targetUserId},
+        ${metadata ? JSON.stringify(metadata) : null}::jsonb,
+        now()
+      );
+    `;
+  }
+
+  async listAdminActions(conversationId: string, limit: number = 50): Promise<GroupAdminAction[]> {
+    const rows = await this.db<GroupAdminAction[]>`
+      SELECT id, conversation_id, actor_id, action, target_user_id, metadata, created_at::text
+        FROM public.group_admin_actions
+       WHERE conversation_id = ${conversationId}
+       ORDER BY created_at DESC
+       LIMIT ${limit};
+    `;
+    return rows;
+  }
+
   async listMyMemberships(userId: string): Promise<ConversationMemberFlags[]> {
     const rows = await this.db<ConversationMemberFlags[]>`
       SELECT conversation_id, role, last_read_at::text, pinned, muted, archived
@@ -152,7 +465,7 @@ export class PostgresConversationRepository implements ConversationRepository {
   async getSummaries(ids: string[]): Promise<Array<Conversation>> {
     if (ids.length === 0) return [];
     const rows = await this.db<Array<Conversation>>`
-      SELECT id, kind, title, created_by, created_at::text, last_message_at::text
+      SELECT id, kind, title, description, avatar_url, created_by, created_at::text, last_message_at::text, disappearing_messages_enabled
         FROM public.conversations
        WHERE id = ANY(${ids});
     `;
@@ -171,7 +484,7 @@ export class PostgresConversationRepository implements ConversationRepository {
 
   async getById(conversationId: string): Promise<Conversation> {
     const rows = await this.db<Conversation[]>`
-      SELECT id, kind, title, created_by, created_at::text, last_message_at::text
+      SELECT id, kind, title, description, avatar_url, created_by, created_at::text, last_message_at::text, disappearing_messages_enabled
         FROM public.conversations
        WHERE id = ${conversationId}
        LIMIT 1;
@@ -211,6 +524,26 @@ export class PostgresConversationRepository implements ConversationRepository {
     await this.db`
       DELETE FROM public.conversation_members
        WHERE conversation_id = ${conversationId} AND user_id = ${userId};
+    `;
+    await this.db`
+      DELETE FROM public.member_restrictions
+       WHERE conversation_id = ${conversationId} AND user_id = ${userId};
+    `;
+  }
+
+  async keepVanishSessionAlive(conversationId: string): Promise<void> {
+    await this.db`
+      UPDATE public.conversations
+         SET vanish_session_active_until = NOW() + INTERVAL '30 seconds'
+       WHERE id = ${conversationId};
+    `;
+  }
+
+  async setDisappearingMessages(conversationId: string, enabled: boolean): Promise<void> {
+    await this.db`
+      UPDATE public.conversations
+         SET disappearing_messages_enabled = ${enabled}
+       WHERE id = ${conversationId};
     `;
   }
 }

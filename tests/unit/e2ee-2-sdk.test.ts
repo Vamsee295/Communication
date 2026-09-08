@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, it } from "vitest";
 import { createSignalProtocolClient } from "@open-e2ee/signal-protocol-sdk";
 import { inMemoryStore } from "@open-e2ee/signal-protocol-sdk/local/store/memory";

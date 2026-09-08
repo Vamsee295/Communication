@@ -1,7 +1,23 @@
-import type { ChatProfile, ConversationMemberFlags, ConversationSummary, GroupMemberRole } from "@/lib/domain/types";
-import type { ConversationRepository, FriendshipRepository, MessageRepository, ProfileRepository } from "@/lib/repositories/ports";
+import type {
+  ChatProfile,
+  ConversationMemberFlags,
+  ConversationSummary,
+  GroupAction,
+  GroupAdminAction,
+  GroupInviteLink,
+  GroupMemberRole,
+  GroupPermissions,
+  MemberRestriction,
+} from "@/lib/domain/types";
+import type {
+  ConversationRepository,
+  FriendshipRepository,
+  MessageRepository,
+  ProfileRepository,
+} from "@/lib/repositories/ports";
 import type { IConversationPolicy } from "@/lib/auth/authorization";
-import { AuthorizationError } from "@/lib/domain/errors";
+import { AuthorizationError, NotFoundError, ValidationError } from "@/lib/domain/errors";
+import { canPerformGroupAction } from "@/lib/auth/group-permissions";
 
 export class ConversationService {
   constructor(
@@ -27,14 +43,24 @@ export class ConversationService {
     if (this.conversationPolicy) {
       await this.conversationPolicy.requireMembership(this.userId, conversationId);
     }
-    // Verify requester is admin or owner
     const members = await this.conversations.listMembers([conversationId]);
     const me = members.find((m) => m.user_id === this.userId);
-    if (!me || (me.role !== "owner" && me.role !== "admin")) {
-      throw new AuthorizationError("Only group admins can add members");
+    if (!me) throw new AuthorizationError("Not a member of this conversation");
+
+    const myRole = me.role ?? "member";
+    const [groupPerms, myRestriction] = await Promise.all([
+      this.conversations.getGroupPermissions ? this.conversations.getGroupPermissions(conversationId) : null,
+      this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(conversationId, this.userId) : null,
+    ]);
+
+    if (!canPerformGroupAction(myRole, "add_members", groupPerms, myRestriction)) {
+      throw new AuthorizationError("You do not have permission to add members to this group");
     }
 
     await this.conversations.addMember(conversationId, memberId, "member");
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "member_added", memberId);
+    }
     return { ok: true };
   }
 
@@ -57,8 +83,14 @@ export class ConversationService {
     if (me.role === "admin" && target.role === "owner") {
       throw new AuthorizationError("Admins cannot remove the group owner");
     }
+    if (me.role === "admin" && target.role === "admin" && target.user_id !== this.userId) {
+      throw new AuthorizationError("Admins cannot remove other admins");
+    }
 
     await this.conversations.removeMember(conversationId, memberId);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "member_removed", memberId);
+    }
     return { ok: true };
   }
 
@@ -73,6 +105,9 @@ export class ConversationService {
     }
 
     await this.conversations.updateMemberRole(conversationId, memberId, role);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "role_changed", memberId, { new_role: role });
+    }
     return { ok: true };
   }
 
@@ -82,12 +117,235 @@ export class ConversationService {
     }
     const members = await this.conversations.listMembers([conversationId]);
     const me = members.find((m) => m.user_id === this.userId);
-    if (!me || (me.role !== "owner" && me.role !== "admin")) {
-      throw new AuthorizationError("Only group admins can change the group title");
+    if (!me) throw new AuthorizationError("Not a member");
+
+    const myRole = me.role ?? "member";
+    const [groupPerms, myRestriction] = await Promise.all([
+      this.conversations.getGroupPermissions ? this.conversations.getGroupPermissions(conversationId) : null,
+      this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(conversationId, this.userId) : null,
+    ]);
+
+    if (!canPerformGroupAction(myRole, "change_group_info", groupPerms, myRestriction)) {
+      throw new AuthorizationError("You do not have permission to change group info");
     }
 
     await this.conversations.updateGroupTitle(conversationId, title);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "title_changed", null, { title });
+    }
     return { ok: true };
+  }
+
+  async updateGroupDescription(conversationId: string, description: string): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me) throw new AuthorizationError("Not a member");
+
+    const myRole = me.role ?? "member";
+    const [groupPerms, myRestriction] = await Promise.all([
+      this.conversations.getGroupPermissions ? this.conversations.getGroupPermissions(conversationId) : null,
+      this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(conversationId, this.userId) : null,
+    ]);
+
+    if (!canPerformGroupAction(myRole, "change_group_info", groupPerms, myRestriction)) {
+      throw new AuthorizationError("You do not have permission to change group info");
+    }
+
+    if (this.conversations.updateGroupDescription) {
+      await this.conversations.updateGroupDescription(conversationId, description);
+    }
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "description_changed");
+    }
+    return { ok: true };
+  }
+
+  async updateGroupAvatar(conversationId: string, avatarUrl: string | null): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me) throw new AuthorizationError("Not a member");
+
+    const myRole = me.role ?? "member";
+    const [groupPerms, myRestriction] = await Promise.all([
+      this.conversations.getGroupPermissions ? this.conversations.getGroupPermissions(conversationId) : null,
+      this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(conversationId, this.userId) : null,
+    ]);
+
+    if (!canPerformGroupAction(myRole, "change_group_info", groupPerms, myRestriction)) {
+      throw new AuthorizationError("You do not have permission to change group info");
+    }
+
+    if (this.conversations.updateGroupAvatar) {
+      await this.conversations.updateGroupAvatar(conversationId, avatarUrl);
+    }
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "avatar_changed");
+    }
+    return { ok: true };
+  }
+
+  async getGroupPermissions(conversationId: string): Promise<GroupPermissions | null> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    if (this.conversations.getGroupPermissions) {
+      return this.conversations.getGroupPermissions(conversationId);
+    }
+    return null;
+  }
+
+  async setGroupPermissions(
+    conversationId: string,
+    perms: Partial<Omit<GroupPermissions, "conversation_id" | "updated_at">>,
+  ): Promise<GroupPermissions> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me || (me.role !== "owner" && me.role !== "admin")) {
+      throw new AuthorizationError("Only group admins can modify group permissions");
+    }
+
+    const updated = await this.conversations.setGroupPermissions(conversationId, perms);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "permissions_updated", null, perms);
+    }
+    return updated;
+  }
+
+  async listMemberRestrictions(conversationId: string): Promise<MemberRestriction[]> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    if (this.conversations.listMemberRestrictions) {
+      return this.conversations.listMemberRestrictions(conversationId);
+    }
+    return [];
+  }
+
+  async setMemberRestriction(
+    conversationId: string,
+    targetUserId: string,
+    perms: Partial<Record<GroupAction, boolean>>,
+    restrictedUntil: string | null = null,
+  ): Promise<MemberRestriction> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    const target = members.find((m) => m.user_id === targetUserId);
+
+    if (!me || (me.role !== "owner" && me.role !== "admin")) {
+      throw new AuthorizationError("Only group admins can restrict members");
+    }
+    if (!target) {
+      throw new NotFoundError("Member not found in conversation");
+    }
+    if (target.role === "owner") {
+      throw new AuthorizationError("Cannot restrict group owner");
+    }
+    if (me.role === "admin" && target.role === "admin") {
+      throw new AuthorizationError("Admins cannot restrict other admins");
+    }
+
+    const res = await this.conversations.setMemberRestriction(
+      conversationId,
+      targetUserId,
+      this.userId,
+      perms,
+      restrictedUntil,
+    );
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "member_restricted", targetUserId, { perms, restrictedUntil });
+    }
+    return res;
+  }
+
+  async removeMemberRestriction(conversationId: string, targetUserId: string): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me || (me.role !== "owner" && me.role !== "admin")) {
+      throw new AuthorizationError("Only group admins can modify member restrictions");
+    }
+
+    await this.conversations.removeMemberRestriction(conversationId, targetUserId);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "restriction_removed", targetUserId);
+    }
+    return { ok: true };
+  }
+
+  async createInviteLink(
+    conversationId: string,
+    expiresAt: string | null = null,
+    maxUses: number | null = null,
+  ): Promise<GroupInviteLink> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me || (me.role !== "owner" && me.role !== "admin")) {
+      throw new AuthorizationError("Only group admins can create invite links");
+    }
+
+    const link = await this.conversations.createInviteLink(conversationId, this.userId, expiresAt, maxUses);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "invite_link_created", null, { link_id: link.id });
+    }
+    return link;
+  }
+
+  async revokeInviteLink(conversationId: string, linkId: string): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me || (me.role !== "owner" && me.role !== "admin")) {
+      throw new AuthorizationError("Only group admins can revoke invite links");
+    }
+
+    await this.conversations.revokeInviteLink(conversationId, linkId);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "invite_link_revoked", null, { link_id: linkId });
+    }
+    return { ok: true };
+  }
+
+  async listInviteLinks(conversationId: string): Promise<GroupInviteLink[]> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me || (me.role !== "owner" && me.role !== "admin")) {
+      throw new AuthorizationError("Only group admins can view invite links");
+    }
+
+    return this.conversations.listInviteLinks(conversationId);
+  }
+
+  async joinViaInviteLink(token: string): Promise<{ conversation_id: string }> {
+    return this.conversations.joinViaInviteLink(token, this.userId);
+  }
+
+  async listAdminActions(conversationId: string): Promise<GroupAdminAction[]> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    return this.conversations.listAdminActions(conversationId);
   }
 
   async list(): Promise<ConversationSummary[]> {
@@ -153,6 +411,8 @@ export class ConversationService {
         id: c.id,
         kind: c.kind,
         title: c.title ?? null,
+        description: c.description ?? null,
+        avatar_url: c.avatar_url ?? null,
         created_by: c.created_by ?? null,
         member_count: members.length,
         members: memberProfiles,
@@ -164,6 +424,7 @@ export class ConversationService {
         muted: myFlags?.muted ?? false,
         archived: myFlags?.archived ?? false,
         my_role: myFlags?.role ?? "member",
+        disappearing_messages_enabled: c.disappearing_messages_enabled,
       };
     });
     summaries.sort((a, b) => (a.last_message_at < b.last_message_at ? 1 : -1));
@@ -174,8 +435,11 @@ export class ConversationService {
     if (this.conversationPolicy) {
       await this.conversationPolicy.requireMembership(this.userId, conversationId);
     }
-    const conversation = await this.conversations.getById(conversationId);
-    const memberRows = await this.conversations.listMembers([conversationId]);
+    const [conversation, memberRows, myMemberships] = await Promise.all([
+      this.conversations.getById(conversationId),
+      this.conversations.listMembers([conversationId]),
+      this.conversations.listMyMemberships(this.userId),
+    ]);
     const memberIds = memberRows.map((m) => m.user_id);
     const memberProfiles = await this.profiles.getChatProfiles(memberIds);
 
@@ -196,8 +460,30 @@ export class ConversationService {
     }
 
     const myRole = rolesByUserId.get(this.userId) ?? "member";
+    const myFlagsRow = myMemberships.find((m) => m.conversation_id === conversationId);
+    const my_flags = myFlagsRow
+      ? {
+          pinned: Boolean(myFlagsRow.pinned),
+          muted: Boolean(myFlagsRow.muted),
+          archived: Boolean(myFlagsRow.archived),
+        }
+      : null;
 
-    return { conversation, members, other, my_role: myRole };
+    let group_permissions: GroupPermissions | null = null;
+    let my_restriction: MemberRestriction | null = null;
+
+    if (conversation.kind === "group" && this.conversations.getGroupPermissions) {
+      try {
+        [group_permissions, my_restriction] = await Promise.all([
+          this.conversations.getGroupPermissions(conversationId),
+          this.conversations.getMemberRestriction ? this.conversations.getMemberRestriction(conversationId, this.userId) : null,
+        ]);
+      } catch {
+        // graceful fallback
+      }
+    }
+
+    return { conversation, members, other, my_role: myRole, my_flags, group_permissions, my_restriction };
   }
 
   async setFlags(
@@ -233,14 +519,31 @@ export class ConversationService {
 
     // If owner leaves and there are other members, transfer owner role to another member
     if (me?.role === "owner" && members.length > 1) {
-      const nextOwner = members.find((m) => m.user_id !== this.userId && m.role === "admin") ??
-                        members.find((m) => m.user_id !== this.userId);
+      const nextOwner =
+        members.find((m) => m.user_id !== this.userId && m.role === "admin") ??
+        members.find((m) => m.user_id !== this.userId);
       if (nextOwner) {
         await this.conversations.updateMemberRole(conversationId, nextOwner.user_id, "owner");
+        if (this.conversations.logAdminAction) {
+          await this.conversations.logAdminAction(conversationId, this.userId, "role_changed", nextOwner.user_id, { new_role: "owner" });
+        }
       }
     }
 
     await this.conversations.leave(this.userId, conversationId);
+    if (this.conversations.logAdminAction) {
+      await this.conversations.logAdminAction(conversationId, this.userId, "member_left", this.userId);
+    }
+    return { ok: true };
+  }
+
+  async setDisappearingMessages(conversationId: string, enabled: boolean): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    }
+    if (this.conversations.setDisappearingMessages) {
+      await this.conversations.setDisappearingMessages(conversationId, enabled);
+    }
     return { ok: true };
   }
 

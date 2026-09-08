@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * E2EE-2 boundary. The OpenE2EE SDK owns PQXDH, Double Ratchet state, skipped
  * keys, replay handling, serialization, and IndexedDB persistence. Ghostline

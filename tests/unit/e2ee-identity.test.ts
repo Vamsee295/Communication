@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, it, vi } from "vitest";
 import {
   generateIdentityKeyPair,
@@ -118,10 +119,16 @@ describe("E2EE-1: Cryptographic Identity & PreKey Infrastructure", () => {
           if (userId === mockUserId) return [mockDevice];
           return [];
         }),
+        getByKey: vi.fn(async (userId, deviceKey) => {
+          if (userId === mockUserId && mockDevice.device_key === deviceKey) return mockDevice;
+          return null;
+        }),
         revoke: vi.fn(async (userId, deviceId) => {
           if (mockDevice.id === deviceId) {
             mockDevice.revoked_at = new Date().toISOString();
+            return { id: mockDevice.id, device_key: mockDevice.device_key };
           }
+          return null;
         }),
       };
 

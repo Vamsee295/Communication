@@ -46,11 +46,35 @@ export async function signOut() {
     notifyDevAuthChange("SIGNED_OUT", null);
     return { error: null };
   }
+
+  // Best-effort attempt to update last_seen before disconnecting
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      await supabase
+        .from("profiles")
+        .update({ last_seen: new Date().toISOString() })
+        .eq("id", session.user.id);
+    }
+  } catch (err) {
+    // ignore
+  }
+
   return supabase.auth.signOut();
 }
 
 export async function signInWithGoogle(redirectUri: string) {
-  return lovable.auth.signInWithOAuth("google", { redirect_uri: redirectUri });
+  return supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: redirectUri },
+  });
+}
+
+export async function signInWithGithub(redirectUri: string) {
+  return supabase.auth.signInWithOAuth({
+    provider: "github",
+    options: { redirectTo: redirectUri },
+  });
 }
 
 export async function resendVerificationEmail(email: string, emailRedirectTo: string) {
@@ -78,6 +102,7 @@ export const authService = {
   signUpWithPassword,
   signOut,
   signInWithGoogle,
+  signInWithGithub,
   resendVerificationEmail,
   isDevAuthBypassEnabled,
   signInWithDevBypass,

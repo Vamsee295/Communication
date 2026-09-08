@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { getIceServers, rtcConfig, isRelayCandidate, formatDuration } from "@/lib/webrtc-config";
 

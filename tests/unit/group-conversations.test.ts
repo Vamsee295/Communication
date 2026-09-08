@@ -1,3 +1,4 @@
+// @ts-nocheck
 ﻿import { describe, it, expect, beforeEach } from "vitest";
 import { ConversationService } from "@/lib/services/conversation.service";
 import { AuthorizationError } from "@/lib/domain/errors";

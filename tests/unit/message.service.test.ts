@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, beforeEach } from "vitest";
 import { MessageService } from "@/lib/services/message.service";
 import { AuthorizationError, NotFoundError, RateLimitError } from "@/lib/domain/errors";

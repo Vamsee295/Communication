@@ -11,6 +11,27 @@ export function getDeviceKey(userId?: string): string {
   return key;
 }
 
+export function rotateDeviceKey(userId?: string): string {
+  if (typeof window === "undefined") return "ssr";
+  const actualKey = userId ? `${KEY}.${userId}` : KEY;
+  const newKey = crypto.randomUUID();
+  localStorage.setItem(actualKey, newKey);
+  // Also rotate base key if userId was provided
+  if (userId) {
+    localStorage.setItem(KEY, newKey);
+  }
+  return newKey;
+}
+
+export function clearDeviceKey(userId?: string): void {
+  if (typeof window === "undefined") return;
+  const actualKey = userId ? `${KEY}.${userId}` : KEY;
+  localStorage.removeItem(actualKey);
+  if (userId) {
+    localStorage.removeItem(KEY);
+  }
+}
+
 export function guessDeviceName(): string {
   if (typeof navigator === "undefined") return "Web";
   const ua = navigator.userAgent;

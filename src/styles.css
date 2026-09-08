@@ -228,10 +228,10 @@
 /* ── Utilities ─────────────────────────────────────────── */
 
 @utility glass {
-  background: rgba(255, 255, 255, 0.82);
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
   backdrop-filter: blur(20px) saturate(160%);
   border: 1px solid var(--border);
-  box-shadow: 0 4px 24px rgba(37, 135, 245, 0.06);
+  box-shadow: 0 4px 24px var(--glow);
 }
 
 @utility glass-dark {

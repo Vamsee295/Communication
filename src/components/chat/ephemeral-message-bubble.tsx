@@ -10,10 +10,9 @@
  * IMPORTANT: These bubbles must never interact with Neon persistent state.
  */
 
-import type { EphemeralMessage } from "@/hooks/use-vanish-mode";
 
 interface EphemeralMessageBubbleProps {
-  message: EphemeralMessage;
+  message: { id: string; created_at: string; sender_name?: string; body: string };
   mine: boolean;
   /** Show sender name (for group conversations). */
   showName?: boolean;

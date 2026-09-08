@@ -1,8 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, Fragment } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { GroupInfoSheet, type GroupMember } from "@/components/group/group-info-sheet";
+import { UserProfileSheet } from "@/components/chat/user-profile-sheet";
 import {
   ArrowLeft,
   Send,
@@ -31,6 +33,12 @@ import {
   LogOut,
   Loader2,
   Moon,
+  UsersRound,
+  User,
+  Bell,
+  BellOff,
+  Archive,
+  ShieldBan,
 } from "lucide-react";
 import {
   getConversation,
@@ -58,6 +66,10 @@ import {
   updateGroupMemberRole,
   updateGroupTitle,
   leaveConversation,
+  finalizeVanishSession,
+  toggleDisappearingMessages,
+  setConversationFlags,
+  blockContact,
   type MessageRow,
   type ChatProfile,
   type ConversationSummary,
@@ -67,10 +79,10 @@ import { listFriendships, type FriendshipRow } from "@/lib/friendships.functions
 import { getMyProfile } from "@/lib/profile.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
-import { usePresence, statusLabel } from "@/components/presence-provider";
+import { usePresence } from "@/components/presence-provider";
 import { useCalls } from "@/components/calls/call-provider";
 import { useVanishMode } from "@/hooks/use-vanish-mode";
-import { VanishBanner } from "@/components/chat/vanish-banner";
+
 import { EphemeralMessageBubble } from "@/components/chat/ephemeral-message-bubble";
 
 export const Route = createFileRoute("/_authenticated/chats/$conversationId")({
@@ -108,8 +120,19 @@ function ChatRoom() {
   const doStar = useServerFn(toggleStar);
   const doForward = useServerFn(forwardMessages);
   const doSearch = useServerFn(searchMessagesInConversation);
+  const doBlock = useServerFn(blockContact);
+  const doFlags = useServerFn(setConversationFlags);
+  const doLeave = useServerFn(leaveConversation);
+  const doFinalizeVanishSession = useServerFn(finalizeVanishSession);
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => fetchProfile() });
+
+  useEffect(() => {
+    return () => {
+      // Explicitly clean up vanish mode session when navigating away
+      doFinalizeVanishSession({ data: { conversation_id: conversationId } }).catch(console.error);
+    };
+  }, [conversationId, doFinalizeVanishSession]);
 
   const conv = useQuery({
     queryKey: ["conversation", conversationId],
@@ -164,6 +187,8 @@ function ChatRoom() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [headerMenu, setHeaderMenu] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<"clear" | "block" | "leave" | null>(null);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const keyboardInset = useKeyboardInset();
@@ -172,8 +197,106 @@ function ChatRoom() {
 
   const meId = me.data?.id;
   const otherId = conv.data?.other?.id;
-  const { onlineIds } = usePresence();
+  const { setActiveConversationId, isUserOnline, getUserStatusLabel } = usePresence();
   const { startCall } = useCalls();
+
+  const isGroup = conv.data?.conversation.kind === "group";
+  const isMuted = Boolean(conv.data?.my_flags?.muted);
+
+  const handleViewPins = () => {
+    const pinList = pins.data?.pins ?? [];
+    if (pinList.length === 0) {
+      import("sonner").then((m) => m.toast(isGroup ? "No pinned messages in this group" : "No pinned messages in this chat"));
+      return;
+    }
+    setPinsCollapsed(false);
+    const targetId = pinList[0]?.message_id;
+    if (targetId) {
+      const el = bubbleRefs.current.get(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-primary", "ring-offset-2");
+        setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"), 2000);
+      }
+    }
+    import("sonner").then((m) =>
+      m.toast.success(`Showing ${pinList.length} pinned message${pinList.length === 1 ? "" : "s"}`),
+    );
+  };
+
+  const handleToggleMute = async () => {
+    try {
+      await doFlags({
+        data: {
+          conversation_id: conversationId,
+          muted: !isMuted,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["conversation", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      import("sonner").then((m) => m.toast.success(isMuted ? "Notifications unmuted" : "Notifications muted"));
+    } catch (e) {
+      import("sonner").then((m) =>
+        m.toast.error(e instanceof Error ? e.message : "Failed to update notification settings"),
+      );
+    }
+  };
+
+  const handleArchive = async () => {
+    try {
+      await doFlags({
+        data: {
+          conversation_id: conversationId,
+          archived: true,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      import("sonner").then((m) => m.toast.success(isGroup ? "Group archived" : "Chat archived"));
+      navigate({ to: "/chats" });
+    } catch (e) {
+      import("sonner").then((m) =>
+        m.toast.error(e instanceof Error ? e.message : "Failed to archive conversation"),
+      );
+    }
+  };
+
+  const handleClearChat = () => {
+    qc.setQueryData(["messages", conversationId], []);
+    import("sonner").then((m) => m.toast.success("Chat history cleared from this view"));
+    setConfirmAction(null);
+  };
+
+  const handleBlockUser = async () => {
+    if (!otherId) return;
+    try {
+      await doBlock({ data: { user_id: otherId } });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      import("sonner").then((m) => m.toast.success("Contact blocked"));
+      navigate({ to: "/chats" });
+    } catch (e) {
+      import("sonner").then((m) => m.toast.error(e instanceof Error ? e.message : "Failed to block user"));
+    } finally {
+      setConfirmAction(null);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    try {
+      await doLeave({ data: { conversation_id: conversationId } });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      import("sonner").then((m) => m.toast.success("Left group"));
+      navigate({ to: "/chats" });
+    } catch (e) {
+      import("sonner").then((m) => m.toast.error(e instanceof Error ? e.message : "Failed to leave group"));
+    } finally {
+      setConfirmAction(null);
+    }
+  };
+
+  useEffect(() => {
+    setActiveConversationId(conversationId);
+    return () => setActiveConversationId(null);
+  }, [conversationId, setActiveConversationId]);
 
   // Preview cache for reply targets outside window
   const [previewCache, setPreviewCache] = useState<Map<string, MessageRow>>(new Map());
@@ -272,21 +395,25 @@ function ChatRoom() {
 
   const {
     vanishActive,
-    vanishMessages,
     enterVanishMode,
     exitVanishMode,
-    sendVanishMessage,
-    onRemoteVanishStart,
-    onRemoteVanishEnd,
-    onRemoteVanishMessage,
     touchHandlers,
   } = useVanishMode({
     conversationId,
-    meId: meId ?? "",
-    myName: myDisplayName,
-    channelRef,
-    channelReady,
+    disappearingMessagesEnabled: Boolean(conv.data?.conversation.disappearing_messages_enabled),
   });
+
+  const prevVanishActive = useRef(vanishActive);
+  useEffect(() => {
+    if (prevVanishActive.current !== vanishActive) {
+      if (vanishActive) {
+        import("sonner").then(m => m.toast("Disappearing messages enabled"));
+      } else {
+        import("sonner").then(m => m.toast("Disappearing messages disabled"));
+      }
+      prevVanishActive.current = vanishActive;
+    }
+  }, [vanishActive]);
   // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -302,6 +429,13 @@ function ChatRoom() {
         () => {
           qc.invalidateQueries({ queryKey: ["messages", conversationId] });
           qc.invalidateQueries({ queryKey: ["conversations"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversations", filter: `id=eq.${conversationId}` },
+        () => {
+          qc.invalidateQueries({ queryKey: ["conversation", conversationId] });
         },
       )
       .on(
@@ -334,6 +468,30 @@ function ChatRoom() {
       )
       .on(
         "postgres_changes",
+        { event: "*", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${conversationId}` },
+        () => {
+          qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+          qc.invalidateQueries({ queryKey: ["conversations"] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "group_permissions", filter: `conversation_id=eq.${conversationId}` },
+        () => {
+          qc.invalidateQueries({ queryKey: ["group-permissions", conversationId] });
+          qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "member_restrictions", filter: `conversation_id=eq.${conversationId}` },
+        () => {
+          qc.invalidateQueries({ queryKey: ["member-restrictions", conversationId] });
+          qc.invalidateQueries({ queryKey: ["conv", conversationId] });
+        },
+      )
+      .on(
+        "postgres_changes",
         { event: "INSERT", schema: "public", table: "message_hidden", filter: `user_id=eq.${meId}` },
         (payload) => {
           const mid = (payload.new as { message_id?: string } | undefined)?.message_id;
@@ -344,16 +502,7 @@ function ChatRoom() {
         const uid = (payload.payload as { user_id?: string })?.user_id;
         if (uid && uid !== meId) setTypingOther(Date.now());
       })
-      // ── Vanish Mode Broadcast events (ephemeral — no Neon writes) ──────────
-      .on("broadcast", { event: "vanish_mode_started" }, () => {
-        onRemoteVanishStart();
-      })
-      .on("broadcast", { event: "vanish_mode_ended" }, () => {
-        onRemoteVanishEnd();
-      })
-      .on("broadcast", { event: "vanish_message_sent" }, (payload) => {
-        onRemoteVanishMessage(payload);
-      })
+      // Vanish Mode uses Postgres changes on the conversation row now
       // ────────────────────────────────────────────────────────────────────────
       .on("presence", { event: "sync" }, () => {
         const state = channel.presenceState() as Record<string, unknown>;
@@ -416,6 +565,7 @@ function ChatRoom() {
         deleted_at: null,
         reply_to_id: replyTo?.id ?? null,
         forwarded_from_id: null,
+        is_vanish: vanishActive,
         pending: true,
       };
       setOptimistic((prev) => [...prev, pending]);
@@ -428,6 +578,7 @@ function ChatRoom() {
             body,
             client_id,
             reply_to_id: parentId,
+            is_vanish: vanishActive,
           },
         });
         qc.invalidateQueries({ queryKey: ["messages", conversationId] });
@@ -479,14 +630,6 @@ function ChatRoom() {
   const submit = () => {
     const body = text.trim();
     if (!body) return;
-
-    // ── Vanish Mode: route through ephemeral path — NEVER write to Neon ──────
-    if (vanishActive) {
-      sendVanishMessage(body);
-      setText("");
-      return;
-    }
-    // ─────────────────────────────────────────────────────────────────────────
 
     if (editing) {
       commitEdit.mutate({ id: editing.id, body });
@@ -603,7 +746,7 @@ function ChatRoom() {
   };
 
   const otherProfile = conv.data?.other ?? null;
-  const isOnline = (otherId ? presentIds.has(otherId) : false) || (!!otherId && onlineIds.has(otherId));
+  const isOnline = isUserOnline(otherId);
   const pinnedMessages = pins.data?.messages ?? [];
 
   const ring = (type: "voice" | "video") => {
@@ -639,27 +782,52 @@ function ChatRoom() {
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div
-          className={conv.data?.conversation.kind === "group" ? "flex items-center gap-2 flex-1 min-w-0 cursor-pointer" : "flex items-center gap-2 flex-1 min-w-0"}
+          className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
           onClick={() => {
             if (conv.data?.conversation.kind === "group") setShowGroupInfo(true);
+            else setShowProfile(true);
           }}
         >
           <div className="relative shrink-0">
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-surface-2 font-bold text-primary ring-1 ring-border">
-              {(conv.data?.conversation.kind === "group"
-                ? (conv.data.conversation.title ?? "G")
-                : (otherProfile?.display_name ?? otherProfile?.username ?? "?")
-              ).charAt(0).toUpperCase()}
-            </div>
+            {conv.data?.conversation.kind === "group" ? (
+              conv.data.conversation.avatar_url ? (
+                <img
+                  src={conv.data.conversation.avatar_url}
+                  alt={conv.data.conversation.title ?? "Group"}
+                  className="h-10 w-10 rounded-xl object-cover ring-1 ring-border shadow-sm"
+                />
+              ) : (
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/12 font-bold text-primary ring-1 ring-border/50 shadow-sm">
+                  <UsersRound className="h-5 w-5 text-primary" aria-label="Group chat" />
+                </div>
+              )
+            ) : (
+              otherProfile?.avatar_url ? (
+                <img
+                  src={otherProfile.avatar_url}
+                  alt={otherProfile.display_name ?? "User"}
+                  className="h-10 w-10 rounded-full object-cover ring-1 ring-border shadow-sm"
+                />
+              ) : (
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/12 font-bold text-primary ring-1 ring-border/50 shadow-sm">
+                  {(otherProfile?.display_name ?? otherProfile?.username ?? "?").charAt(0).toUpperCase()}
+                </div>
+              )
+            )}
             {conv.data?.conversation.kind !== "group" && isOnline && (
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-400" />
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold">
-              {conv.data?.conversation.kind === "group"
-                ? (conv.data.conversation.title ?? "Group chat")
-                : (otherProfile?.display_name ?? otherProfile?.username ?? "Ghost")}
+            <p className="flex items-center gap-1.5 truncate text-sm font-bold">
+              {conv.data?.conversation.kind === "group" && (
+                <UsersRound className="h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+              )}
+              <span className="truncate">
+                {conv.data?.conversation.kind === "group"
+                  ? (conv.data.conversation.title ?? "Group chat")
+                  : (otherProfile?.display_name ?? otherProfile?.username ?? "Ghost")}
+              </span>
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
               {conv.data?.conversation.kind === "group" ? (
@@ -668,7 +836,7 @@ function ChatRoom() {
                 <>
                   {otherProfile?.username && <span>@{otherProfile.username} · </span>}
                   <span className={isOnline ? "text-emerald-400" : ""}>
-                    {statusLabel(isOnline, otherProfile?.last_seen)}
+                    {getUserStatusLabel(otherId, conversationId, otherProfile?.last_seen)}
                   </span>
                 </>
               )}
@@ -689,7 +857,7 @@ function ChatRoom() {
             setSearchQ("");
             setSearchHits([]);
           }}
-          className="hidden h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 sm:grid"
+          className="hidden h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-foreground/10 sm:grid"
           aria-label="Search"
         >
           <Search className="h-4 w-4" />
@@ -698,7 +866,7 @@ function ChatRoom() {
           onClick={() => ring("voice")}
           disabled={!otherId || otherId === meId}
           title={otherProfile ? `Call ${otherProfile.display_name ?? otherProfile.username}` : "Voice call"}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 active:bg-white/10 disabled:opacity-40"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-foreground/10 active:bg-foreground/10 disabled:opacity-40"
           aria-label="Voice call"
         >
           <Phone className="h-4 w-4" />
@@ -707,7 +875,7 @@ function ChatRoom() {
           onClick={() => ring("video")}
           disabled={!otherId || otherId === meId}
           title={otherProfile ? `Video call with ${otherProfile.display_name ?? otherProfile.username}` : "Video call"}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10 active:bg-white/10 disabled:opacity-40"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-foreground/10 active:bg-foreground/10 disabled:opacity-40"
           aria-label="Video call"
         >
           <Video className="h-4 w-4" />
@@ -722,14 +890,14 @@ function ChatRoom() {
             "grid h-11 w-11 shrink-0 place-items-center rounded-full transition",
             vanishActive
               ? "text-[#7cb9ff] bg-[rgba(37,135,245,0.2)]"
-              : "hover:bg-white/10",
+              : "hover:bg-foreground/10",
           ].join(" ")}
         >
           <Moon className="h-4 w-4" />
         </button>
         <button
           onClick={() => setHeaderMenu((v) => !v)}
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-white/10"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full hover:bg-foreground/10"
           aria-label="More"
         >
           <MoreVertical className="h-4 w-4" />
@@ -750,57 +918,193 @@ function ChatRoom() {
         {headerMenu && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setHeaderMenu(false)} />
-            <div className="glass absolute right-3 top-14 z-50 w-52 overflow-hidden rounded-xl py-1 shadow-2xl">
-              <button
-                onClick={() => {
-                  setHeaderMenu(false);
-                  setSearchQ("");
-                  setSearchHits([]);
-                  setSearchOpen(true);
-                }}
-                className="flex w-full items-center gap-2.5 px-3 py-3 text-left text-[13px] hover:bg-surface-2 sm:hidden"
-              >
-                <Search className="h-4 w-4" /> Search in chat
-              </button>
-              {conv.data?.conversation.kind === "group" && (
-                <button
-                  onClick={() => {
-                    setHeaderMenu(false);
-                    setShowGroupInfo(true);
-                  }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
-                >
-                  <Info className="h-4 w-4 text-primary" /> Group info & members
-                </button>
+            <div className="glass animate-scale-in absolute right-3 top-14 z-50 w-56 overflow-hidden rounded-2xl border border-border bg-popover/95 py-1.5 shadow-2xl backdrop-blur-xl">
+              {isGroup ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setShowGroupInfo(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Info className="h-4 w-4 text-primary" /> Group Info & Members
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setSearchQ("");
+                      setSearchHits([]);
+                      setSearchOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Search className="h-4 w-4 text-muted-foreground" /> Search in Group
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      handleViewPins();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Pin className="h-4 w-4 text-muted-foreground" /> Pinned Messages
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      handleToggleMute();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    {isMuted ? (
+                      <BellOff className="h-4 w-4 text-amber-500" />
+                    ) : (
+                      <Bell className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    {isMuted ? "Unmute Notifications" : "Notifications"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      if (vanishActive) {
+                        exitVanishMode();
+                      } else {
+                        enterVanishMode();
+                      }
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Moon className="h-4 w-4 text-muted-foreground" />
+                    {vanishActive ? "Exit Vanish Mode" : "Vanish Mode"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setPrivacyOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Lock className="h-4 w-4 text-muted-foreground" /> Privacy & Security
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      handleArchive();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Archive className="h-4 w-4 text-muted-foreground" /> Archive Group
+                  </button>
+                  <div className="my-1.5 h-px bg-border/60" />
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setConfirmAction("leave");
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-destructive hover:bg-destructive/10 transition"
+                  >
+                    <LogOut className="h-4 w-4" /> Leave Group
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setShowProfile(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-foreground hover:bg-surface-2 transition"
+                  >
+                    <User className="h-4 w-4 text-primary" /> View Profile
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setSearchQ("");
+                      setSearchHits([]);
+                      setSearchOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Search className="h-4 w-4 text-muted-foreground" /> Search in Chat
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      handleViewPins();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Pin className="h-4 w-4 text-muted-foreground" /> Pinned Messages
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      handleToggleMute();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    {isMuted ? (
+                      <BellOff className="h-4 w-4 text-amber-500" />
+                    ) : (
+                      <Bell className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    {isMuted ? "Unmute Notifications" : "Notifications"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      if (vanishActive) {
+                        exitVanishMode();
+                      } else {
+                        enterVanishMode();
+                      }
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Moon className="h-4 w-4 text-muted-foreground" />
+                    {vanishActive ? "Exit Vanish Mode" : "Vanish Mode"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setPrivacyOpen(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Lock className="h-4 w-4 text-muted-foreground" /> Privacy & Security
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      handleArchive();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                  >
+                    <Archive className="h-4 w-4 text-muted-foreground" /> Archive Chat
+                  </button>
+                  <div className="my-1.5 h-px bg-border/60" />
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setConfirmAction("clear");
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-destructive hover:bg-destructive/10 transition"
+                  >
+                    <Trash2 className="h-4 w-4" /> Clear Chat
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
+                      setConfirmAction("block");
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-destructive hover:bg-destructive/10 transition"
+                  >
+                    <ShieldBan className="h-4 w-4" /> Block User
+                  </button>
+                </>
               )}
-              <button
-                onClick={() => {
-                  setHeaderMenu(false);
-                  setPinsCollapsed((v) => !v);
-                }}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
-              >
-                <Pin className="h-4 w-4" /> {pinsCollapsed ? "Show pinned" : "Hide pinned"}
-              </button>
-              <button
-                onClick={() => {
-                  setHeaderMenu(false);
-                  vanishActive ? exitVanishMode() : enterVanishMode();
-                }}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
-              >
-                <Moon className="h-4 w-4" />
-                {vanishActive ? "Exit Vanish Mode" : "Vanish Mode"}
-              </button>
-              <button
-                onClick={() => {
-                  setHeaderMenu(false);
-                  setPrivacyOpen(true);
-                }}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] hover:bg-surface-2"
-              >
-                <Lock className="h-4 w-4" /> Privacy details
-              </button>
             </div>
           </>
         )}
@@ -825,13 +1129,13 @@ function ChatRoom() {
               {searchIdx + 1}/{searchHits.length}
             </span>
           )}
-          <button onClick={prevHit} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10" aria-label="Prev">
+          <button onClick={prevHit} className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10" aria-label="Prev">
             <ChevronUp className="h-4 w-4" />
           </button>
-          <button onClick={nextHit} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10" aria-label="Next">
+          <button onClick={nextHit} className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10" aria-label="Next">
             <ChevronDown className="h-4 w-4" />
           </button>
-          <button onClick={() => setSearchOpen(false)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10" aria-label="Close">
+          <button onClick={() => setSearchOpen(false)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -851,7 +1155,7 @@ function ChatRoom() {
           </div>
           <span
             onClick={(e) => { e.stopPropagation(); setPinsCollapsed(true); }}
-            className="grid h-7 w-7 cursor-pointer place-items-center rounded-full hover:bg-white/10"
+            className="grid h-7 w-7 cursor-pointer place-items-center rounded-full hover:bg-foreground/10"
             aria-label="Hide pins"
           >
             <X className="h-3.5 w-3.5" />
@@ -861,13 +1165,13 @@ function ChatRoom() {
 
       {selectMode && (
         <div className="glass sticky top-[68px] z-20 flex items-center gap-2 border-b border-border px-3 py-2">
-          <button onClick={() => setSelected(new Set())} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10">
+          <button onClick={() => setSelected(new Set())} className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10">
             <X className="h-4 w-4" />
           </button>
           <p className="flex-1 text-sm font-semibold">{selected.size} selected</p>
           <button
             onClick={() => setForwardFrom(Array.from(selected))}
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10"
             aria-label="Forward"
           >
             <Forward className="h-4 w-4" />
@@ -879,7 +1183,7 @@ function ChatRoom() {
               setSelected(new Set());
               showToast("Starred");
             }}
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10"
             aria-label="Star"
           >
             <Star className="h-4 w-4" />
@@ -893,7 +1197,7 @@ function ChatRoom() {
               navigator.clipboard.writeText(text).then(() => showToast("Copied")).catch(() => {});
               setSelected(new Set());
             }}
-            className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
+            className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10"
             aria-label="Copy"
           >
             <Copy className="h-4 w-4" />
@@ -903,7 +1207,7 @@ function ChatRoom() {
               doDeleteForMe(Array.from(selected));
               setSelected(new Set());
             }}
-            className="grid h-8 w-8 place-items-center rounded-full text-destructive hover:bg-white/10"
+            className="grid h-8 w-8 place-items-center rounded-full text-destructive hover:bg-foreground/10"
             aria-label="Delete"
           >
             <Trash2 className="h-4 w-4" />
@@ -911,13 +1215,10 @@ function ChatRoom() {
         </div>
       )}
 
-      {/* Vanish Mode overlay banner */}
-      {vanishActive && <VanishBanner onExit={exitVanishMode} />}
 
       <div
         ref={scrollerRef}
         className="flex-1 overflow-y-auto px-4 py-4"
-        style={vanishActive ? { background: "linear-gradient(180deg, #070f1d 0%, #0b1b33 100%)" } : undefined}
       >
         <ul className="mx-auto flex max-w-md flex-col gap-1.5">
           {rendered.map((m, i) => {
@@ -932,22 +1233,33 @@ function ChatRoom() {
             const isSelected = selected.has(m.id);
             const parent = m.reply_to_id ? messageById.get(m.reply_to_id) : null;
             const isSearchHit = searchHits[searchIdx] === m.id;
+            const isFirstVanish = m.is_vanish && (!prev || !prev.is_vanish);
 
-            return (
-              <li
-                key={m.id}
-                ref={(el) => {
-                  if (el) bubbleRefs.current.set(m.id, el);
-                  else bubbleRefs.current.delete(m.id);
-                }}
-                className={[
-                  "flex overflow-hidden transition-all duration-[260ms] ease-out",
-                  mine ? "justify-end" : "justify-start",
-                  grouped ? "mt-0" : "mt-2",
-                  removing ? "max-h-0 -translate-y-1 scale-95 opacity-0" : "max-h-none opacity-100",
-                  isSelected ? "bg-primary/10 rounded-xl" : "",
-                ].join(" ")}
-              >
+            const renderMessage = () => {
+              if (m.is_vanish) {
+                return (
+                  <EphemeralMessageBubble
+                    message={{ ...m, sender_name: conv.data?.members.find((mb) => mb.id === m.sender_id)?.display_name ?? "User" }}
+                    mine={mine}
+                    showName={conv.data?.conversation.kind === "group"}
+                  />
+                );
+              }
+
+              return (
+                <li
+                  ref={(el) => {
+                    if (el) bubbleRefs.current.set(m.id, el);
+                    else bubbleRefs.current.delete(m.id);
+                  }}
+                  className={[
+                    "flex overflow-hidden transition-all duration-[260ms] ease-out",
+                    mine ? "justify-end" : "justify-start",
+                    grouped ? "mt-0" : "mt-2",
+                    removing ? "max-h-0 -translate-y-1 scale-95 opacity-0" : "max-h-none opacity-100",
+                    isSelected ? "bg-primary/10 rounded-xl" : "",
+                  ].join(" ")}
+                >
                 <div className={["flex max-w-[85%] flex-col gap-0.5", mine ? "items-end" : "items-start"].join(" ")}>
                   <div
                     onClick={() => selectMode && toggleSelect(m.id)}
@@ -972,7 +1284,7 @@ function ChatRoom() {
                         onClick={(e) => { e.stopPropagation(); scrollToMessage(parent.id); }}
                         className={[
                           "mb-1 block w-full rounded-lg border-l-2 px-2 py-1 text-left text-[11px]",
-                          mine ? "border-primary-foreground/60 bg-primary-foreground/10" : "border-primary bg-white/5",
+                          mine ? "border-primary-foreground/60 bg-primary-foreground/10" : "border-primary bg-foreground/5",
                         ].join(" ")}
                       >
                         <p className="line-clamp-2">{parent.body}</p>
@@ -1022,26 +1334,21 @@ function ChatRoom() {
                 </div>
               </li>
             );
-          })}
-          {typingOther && (
-            <li className="flex justify-start">
-              <div className="glass flex items-center gap-1 rounded-2xl rounded-bl-md px-3 py-2">
-                <Dot delay="0ms" />
-                <Dot delay="150ms" />
-                <Dot delay="300ms" />
-              </div>
-            </li>
-          )}
-          {/* Vanish Mode: ephemeral messages (never in Neon) */}
-          {vanishActive && vanishMessages.map((em) => (
-            <EphemeralMessageBubble
-              key={em.id}
-              message={em}
-              mine={em.sender_id === meId}
-              showName={conv.data?.conversation.kind === "group"}
-            />
-          ))}
-          {/* Vanish Mode typing indicator area (reuse existing typingOther) */}
+          };
+
+          return (
+            <Fragment key={m.id}>
+              {isFirstVanish && (
+                <li className="my-4 flex items-center justify-center gap-4 text-[11px] font-medium tracking-wide text-primary/70 uppercase select-none">
+                  <span className="h-px w-8 bg-primary/20" />
+                  <span className="flex items-center gap-1.5"><Moon className="h-3 w-3" /> Vanish Mode enabled</span>
+                  <span className="h-px w-8 bg-primary/20" />
+                </li>
+              )}
+              {renderMessage()}
+            </Fragment>
+          );
+        })}
           {typingOther && (
             <li className="flex justify-start">
               <div className="glass flex items-center gap-1 rounded-2xl rounded-bl-md px-3 py-2">
@@ -1057,19 +1364,7 @@ function ChatRoom() {
       <form
         onSubmit={(e) => { e.preventDefault(); submit(); }}
         className="sticky bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur"
-        style={vanishActive
-          ? { background: "rgba(7,15,29,0.92)" }
-          : { background: "rgba(var(--background), 0.8)" }}
       >
-        {/* Vanish Mode composer label */}
-        {vanishActive && (
-          <div className="mx-auto mb-1 max-w-md">
-            <p className="flex items-center gap-1 text-[10px] font-medium" style={{ color: "#4a7a9e" }}>
-              <Moon className="h-3 w-3" aria-hidden />
-              Vanish Mode — messages won't be saved
-            </p>
-          </div>
-        )}
         <div className="mx-auto max-w-md">
           {!vanishActive && (replyTo || editing) && (
             <div className="glass mb-1.5 flex items-center gap-2 rounded-2xl border-l-2 border-primary px-3 py-2">
@@ -1083,7 +1378,7 @@ function ChatRoom() {
               <button
                 type="button"
                 onClick={() => { setReplyTo(null); setEditing(null); setText(""); }}
-                className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10"
+                className="grid h-7 w-7 place-items-center rounded-full hover:bg-foreground/10"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1112,11 +1407,8 @@ function ChatRoom() {
               placeholder={vanishActive ? "Vanish message..." : editing ? "Edit message" : "Message"}
               className={[
                 "max-h-32 min-h-11 flex-1 resize-none rounded-3xl px-4 py-3 text-sm outline-none transition-colors",
-                vanishActive ? "" : "glass",
+                "glass",
               ].join(" ")}
-              style={vanishActive
-                ? { background: "rgba(11,27,51,0.9)", border: "1px solid rgba(37,135,245,0.3)", color: "#c8daf0" }
-                : undefined}
               aria-label={vanishActive ? "Type a vanish message" : "Type a message"}
             />
             <button
@@ -1124,11 +1416,8 @@ function ChatRoom() {
               disabled={!text.trim() || (!vanishActive && (send.isPending || commitEdit.isPending))}
               className={[
                 "grid h-11 w-11 place-items-center rounded-full text-primary-foreground transition disabled:opacity-40",
-                vanishActive ? "" : "bg-primary glow-primary",
+                "bg-primary glow-primary",
               ].join(" ")}
-              style={vanishActive
-                ? { background: "linear-gradient(135deg, #0f2f5a, #1a4f8a)", boxShadow: "0 2px 12px rgba(37,135,245,0.3)" }
-                : undefined}
               aria-label={editing ? "Save" : vanishActive ? "Send vanish message" : "Send"}
             >
               {vanishActive ? <Moon className="h-4 w-4" /> : <Send className="h-4 w-4" />}
@@ -1232,11 +1521,65 @@ function ChatRoom() {
         <GroupInfoSheet
           conversationId={conversationId}
           title={conv.data.conversation.title ?? "Group chat"}
+          description={conv.data.conversation.description}
+          avatar_url={conv.data.conversation.avatar_url}
           created_by={conv.data.conversation.created_by ?? null}
-          members={conv.data.members}
+          members={(conv.data.members as unknown as GroupMember[]) ?? []}
           myRole={conv.data.my_role}
           meId={meId}
           onClose={() => setShowGroupInfo(false)}
+        />
+      )}
+
+      {showProfile && conv.data?.other && (
+        <UserProfileSheet
+          user={conv.data.other}
+          isOnline={isOnline}
+          statusLabel={getUserStatusLabel(otherId, conversationId, otherProfile?.last_seen)}
+          isMuted={isMuted}
+          onClose={() => setShowProfile(false)}
+          onVoiceCall={() => ring("voice")}
+          onVideoCall={() => ring("video")}
+          onSearch={() => {
+            setSearchQ("");
+            setSearchHits([]);
+            setSearchOpen(true);
+          }}
+          onToggleMute={handleToggleMute}
+          onClearChat={() => setConfirmAction("clear")}
+          onBlock={() => setConfirmAction("block")}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          title={
+            confirmAction === "clear"
+              ? "Clear chat history?"
+              : confirmAction === "block"
+              ? `Block ${otherProfile?.display_name ?? otherProfile?.username ?? "this user"}?`
+              : "Leave this group?"
+          }
+          body={
+            confirmAction === "clear"
+              ? "This will clear the message history from your screen."
+              : confirmAction === "block"
+              ? "They won't be able to message or call you until you unblock them."
+              : "You will leave this group conversation. You will no longer receive new messages."
+          }
+          action={
+            confirmAction === "clear"
+              ? "Clear"
+              : confirmAction === "block"
+              ? "Block"
+              : "Leave"
+          }
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={() => {
+            if (confirmAction === "clear") handleClearChat();
+            else if (confirmAction === "block") handleBlockUser();
+            else if (confirmAction === "leave") handleLeaveGroup();
+          }}
         />
       )}
 
@@ -1313,7 +1656,7 @@ function ContextMenu({
     <button
       onClick={() => { onClick(); onClose(); }}
       className={[
-        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-white/10",
+        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-foreground/10",
         danger ? "text-destructive" : "",
       ].join(" ")}
     >
@@ -1334,7 +1677,7 @@ function ContextMenu({
             <button
               key={e}
               onClick={() => { onReact(e); onClose(); }}
-              className="grid h-8 w-8 place-items-center rounded-full text-lg transition hover:scale-125 hover:bg-white/10"
+              className="grid h-8 w-8 place-items-center rounded-full text-lg transition hover:scale-125 hover:bg-foreground/10"
             >
               {e}
             </button>
@@ -1394,7 +1737,7 @@ function ConfirmDeleteDialog({
           >
             Delete for me
           </button>
-          <button onClick={onCancel} className="h-11 rounded-full border border-border font-semibold transition hover:bg-white/5">
+          <button onClick={onCancel} className="h-11 rounded-full border border-border font-semibold transition hover:bg-foreground/5">
             Cancel
           </button>
         </div>
@@ -1506,7 +1849,7 @@ function ForwardSheet({
       >
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold">Forward to…</h3>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10">
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-foreground/10">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -1537,14 +1880,43 @@ function ForwardSheet({
                     }
                     className={[
                       "flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition",
-                      on ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-white/5",
+                      on ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-foreground/5",
                     ].join(" ")}
                   >
-                    <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/20 font-bold text-primary">
-                      {title.charAt(0).toUpperCase()}
+                    <div className="relative shrink-0">
+                      {c.kind === "group" ? (
+                        c.avatar_url ? (
+                          <img
+                            src={c.avatar_url}
+                            alt={title}
+                            className="h-10 w-10 rounded-xl object-cover ring-1 ring-border shadow-sm"
+                          />
+                        ) : (
+                          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/12 font-bold text-primary ring-1 ring-border/50 shadow-sm">
+                            <UsersRound className="h-5 w-5 text-primary" aria-label="Group chat" />
+                          </div>
+                        )
+                      ) : (
+                        c.other?.avatar_url ? (
+                          <img
+                            src={c.other.avatar_url}
+                            alt={title}
+                            className="h-10 w-10 rounded-full object-cover ring-1 ring-border shadow-sm"
+                          />
+                        ) : (
+                          <div className="grid h-10 w-10 place-items-center rounded-full bg-primary/12 font-bold text-primary ring-1 ring-border/50 shadow-sm">
+                            {title.charAt(0).toUpperCase()}
+                          </div>
+                        )
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold">{title}</p>
+                      <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+                        {c.kind === "group" && (
+                          <UsersRound className="h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
+                        )}
+                        <span className="truncate">{title}</span>
+                      </p>
                       <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>
                     </div>
                     {on && <Check className="h-4 w-4 text-primary" />}
@@ -1577,347 +1949,53 @@ function Dot({ delay }: { delay: string }) {
   );
 }
 
-type GroupMember = ChatProfile & { role: GroupMemberRole };
-
-function GroupInfoSheet({
-  conversationId,
-  title: initialTitle,
-  created_by,
-  members,
-  myRole,
-  meId,
-  onClose,
+function ConfirmDialog({
+  title,
+  body,
+  action,
+  danger = true,
+  onCancel,
+  onConfirm,
 }: {
-  conversationId: string;
   title: string;
-  created_by: string | null;
-  members: ChatProfile[];
-  myRole: GroupMemberRole;
-  meId: string | undefined;
-  onClose: () => void;
+  body: string;
+  action: string;
+  danger?: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
 }) {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const doAddMember = useServerFn(addGroupMember);
-  const doRemoveMember = useServerFn(removeGroupMember);
-  const doUpdateRole = useServerFn(updateGroupMemberRole);
-  const doUpdateTitle = useServerFn(updateGroupTitle);
-  const doLeave = useServerFn(leaveConversation);
-  const doFetchFriendships = useServerFn(listFriendships);
-
-  // Re-fetch the conversation to get roles (members from conv.data are ChatProfile only)
-  const conv = useQuery({
-    queryKey: ["conversation-detail", conversationId],
-    queryFn: () => doFetchFriendships(),
-    staleTime: 30_000,
-  });
-
-  // Use conv detail to get roles. Fall back to passed members if unavailable.
-  const convDetail = useQuery({
-    queryKey: ["conv", conversationId],
-    queryFn: async () => {
-      // Already cached from main page query
-      return null;
-    },
-    staleTime: Infinity,
-  });
-  void convDetail;
-
-  const [editTitle, setEditTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(initialTitle);
-  const [loading, setLoading] = useState<string | null>(null);
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
-  const [addMode, setAddMode] = useState(false);
-  const [picked, setPicked] = useState<string | null>(null);
-
-  // Friends not already in group
-  const friendshipsData = conv.data;
-  const acceptedFriends = (friendshipsData?.friendships ?? []).filter(
-    (f) => f.status === "accepted"
-  );
-  const memberIds = new Set(members.map((m) => m.id));
-  const friendsMap = (friendshipsData?.profiles ?? {}) as Record<string, { display_name?: string | null; username?: string | null }>;
-  const addableFriends = acceptedFriends.filter((f) => {
-    const friendId = f.requester_id === meId ? f.addressee_id : f.requester_id;
-    return !memberIds.has(friendId);
-  });
-
-  const canManage = myRole === "owner" || myRole === "admin";
-
-  const saveTitle = async () => {
-    if (titleDraft.trim() === initialTitle) { setEditTitle(false); return; }
-    setLoading("title");
-    try {
-      await doUpdateTitle({ data: { conversation_id: conversationId, title: titleDraft.trim() } });
-      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
-      qc.invalidateQueries({ queryKey: ["conversations"] });
-      toast.success("Group name updated");
-      setEditTitle(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update title");
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const removeMember = async (memberId: string) => {
-    setLoading(`remove-${memberId}`);
-    try {
-      await doRemoveMember({ data: { conversation_id: conversationId, member_id: memberId } });
-      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
-      qc.invalidateQueries({ queryKey: ["conversations"] });
-      toast.success("Member removed");
-      setConfirmRemove(null);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not remove member");
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const changeRole = async (memberId: string, role: GroupMemberRole) => {
-    setLoading(`role-${memberId}`);
-    try {
-      await doUpdateRole({ data: { conversation_id: conversationId, member_id: memberId, role } });
-      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
-      toast.success("Role updated");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update role");
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const addFriend = async () => {
-    if (!picked) return;
-    setLoading("add");
-    try {
-      await doAddMember({ data: { conversation_id: conversationId, member_id: picked } });
-      qc.invalidateQueries({ queryKey: ["conv", conversationId] });
-      qc.invalidateQueries({ queryKey: ["conversations"] });
-      toast.success("Member added");
-      setAddMode(false);
-      setPicked(null);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not add member");
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const leaveGroup = async () => {
-    setLoading("leave");
-    try {
-      await doLeave({ data: { conversation_id: conversationId } });
-      qc.invalidateQueries({ queryKey: ["conversations"] });
-      toast.success("You left the group");
-      navigate({ to: "/chats" });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not leave group");
-      setLoading(null);
-    }
-  };
-
-  const roleBadge = (role: GroupMemberRole) => {
-    if (role === "owner") return "Owner";
-    if (role === "admin") return "Admin";
-    return null;
-  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 animate-fade-in" onClick={onClose}>
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="glass w-full max-w-md rounded-t-3xl border border-border p-4 shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold">Group Info</h3>
-          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Title */}
-        <div className="mb-4">
-          {editTitle ? (
-            <div className="flex gap-2">
-              <input
-                autoFocus
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                maxLength={100}
-                className="flex-1 rounded-xl border border-border bg-surface-2/60 px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-                onKeyDown={(e) => { if (e.key === "Enter") saveTitle(); if (e.key === "Escape") setEditTitle(false); }}
-              />
-              <button
-                onClick={saveTitle}
-                disabled={loading === "title"}
-                className="grid h-10 w-10 place-items-center rounded-full bg-primary text-primary-foreground"
-              >
-                {loading === "title" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <p className="text-base font-bold">{titleDraft}</p>
-                <p className="text-[11px] text-muted-foreground">{members.length} member{members.length === 1 ? "" : "s"}</p>
-              </div>
-              {canManage && (
-                <button
-                  onClick={() => setEditTitle(true)}
-                  className="grid h-8 w-8 place-items-center rounded-full hover:bg-white/10"
-                  aria-label="Edit group name"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Add member panel */}
-        {canManage && (
-          <div className="mb-3">
-            {addMode ? (
-              <div className="flex flex-col gap-2">
-                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Add a friend</p>
-                {addableFriends.length === 0 ? (
-                  <p className="py-2 text-center text-xs text-muted-foreground">All friends are already members</p>
-                ) : (
-                  <ul className="max-h-32 overflow-y-auto grid gap-1">
-                    {addableFriends.map((f) => {
-                      const friendId = f.requester_id === meId ? f.addressee_id : f.requester_id;
-                      const prof = friendsMap[friendId];
-                      const name = prof?.display_name ?? prof?.username ?? "Friend";
-                      return (
-                        <li key={f.id}>
-                          <button
-                            onClick={() => setPicked(friendId)}
-                            className={["flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition", picked === friendId ? "bg-primary/20 ring-1 ring-primary" : "hover:bg-white/5"].join(" ")}
-                          >
-                            <div className="grid h-7 w-7 place-items-center rounded-full bg-primary/20 font-bold text-primary text-xs">{name.charAt(0).toUpperCase()}</div>
-                            {name}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                <div className="flex gap-2">
-                  <button onClick={() => { setAddMode(false); setPicked(null); }} className="flex-1 h-9 rounded-full border border-border text-xs font-semibold hover:bg-white/5">Cancel</button>
-                  <button onClick={addFriend} disabled={!picked || loading === "add"} className="flex-1 h-9 rounded-full bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-40">
-                    {loading === "add" ? "Adding…" : "Add"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAddMode(true)}
-                className="flex w-full items-center gap-2 rounded-xl border border-dashed border-border px-3 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary transition"
-              >
-                <UserPlus className="h-4 w-4" /> Add member
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Member list */}
-        <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Members</p>
-        <ul className="flex-1 overflow-y-auto grid gap-1 pb-2">
-          {members.map((m) => {
-            const badge = roleBadge(m.id === (created_by ?? "") ? "owner" : myRole === "owner" ? "member" : "member");
-            const name = m.display_name ?? m.username ?? "Ghost";
-            const isMe = m.id === meId;
-            const isLoading = loading === `remove-${m.id}` || loading === `role-${m.id}`;
-
-            return (
-              <li key={m.id} className="flex items-center gap-3 rounded-2xl px-3 py-2 hover:bg-white/5">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary/20 font-bold text-primary text-sm">
-                  {name.charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <p className="truncate text-sm font-semibold">{name}{isMe && " (you)"}</p>
-                    {badge && <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">{badge}</span>}
-                  </div>
-                  {m.username && <p className="truncate text-[11px] text-muted-foreground">@{m.username}</p>}
-                </div>
-                {!isMe && myRole === "owner" && (
-                  <div className="flex items-center gap-1">
-                    {isLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => changeRole(m.id, "admin")}
-                          title="Promote to admin"
-                          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-primary"
-                        >
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => changeRole(m.id, "member")}
-                          title="Demote to member"
-                          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-primary"
-                        >
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setConfirmRemove(m.id)}
-                          title="Remove member"
-                          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-                {!isMe && myRole === "admin" && m.id !== created_by && (
-                  <button
-                    onClick={() => setConfirmRemove(m.id)}
-                    disabled={isLoading}
-                    title="Remove member"
-                    className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10 text-muted-foreground hover:text-destructive"
-                  >
-                    {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-
-        {/* Confirm remove */}
-        {confirmRemove && (
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => setConfirmRemove(null)} className="flex-1 h-10 rounded-full border border-border text-sm font-semibold hover:bg-white/5">Cancel</button>
-            <button onClick={() => removeMember(confirmRemove)} disabled={loading === `remove-${confirmRemove}`} className="flex-1 h-10 rounded-full bg-destructive text-destructive-foreground text-sm font-semibold disabled:opacity-40">
-              {loading === `remove-${confirmRemove}` ? "Removing…" : "Remove"}
-            </button>
-          </div>
-        )}
-
-        {/* Leave group */}
-        {!confirmLeave ? (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
+      <div className="card-elevated animate-rise-in w-full max-w-sm rounded-2xl p-6 bg-card border border-border shadow-2xl">
+        <h2 className="text-[15px] font-bold text-foreground">{title}</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body}</p>
+        <div className="mt-5 flex justify-end gap-2.5">
           <button
-            onClick={() => setConfirmLeave(true)}
-            className="mt-3 flex w-full items-center justify-center gap-2 h-11 rounded-full border border-destructive/40 text-destructive text-sm font-semibold hover:bg-destructive/10 transition"
+            onClick={onCancel}
+            className="h-10 rounded-xl border border-border px-4 text-sm font-semibold text-foreground transition hover:bg-surface-2"
           >
-            <LogOut className="h-4 w-4" /> Leave group
+            Cancel
           </button>
-        ) : (
-          <div className="mt-3 flex gap-2">
-            <button onClick={() => setConfirmLeave(false)} className="flex-1 h-10 rounded-full border border-border text-sm font-semibold hover:bg-white/5">Cancel</button>
-            <button onClick={leaveGroup} disabled={loading === "leave"} className="flex-1 h-10 rounded-full bg-destructive text-destructive-foreground text-sm font-semibold disabled:opacity-40">
-              {loading === "leave" ? "Leaving…" : "Leave"}
-            </button>
-          </div>
-        )}
+          <button
+            onClick={onConfirm}
+            className={[
+              "h-10 rounded-xl px-4 text-sm font-semibold text-white shadow-sm transition",
+              danger ? "bg-destructive hover:bg-destructive/90" : "bg-primary hover:bg-primary/90",
+            ].join(" ")}
+          >
+            {action}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+

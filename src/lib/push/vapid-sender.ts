@@ -296,6 +296,9 @@ export type WebPushNotificationPayload = {
   title: string;
   body: string;
   notificationId: string;
+  conversationId?: string;
+  senderName?: string;
+  groupName?: string;
 };
 
 /**

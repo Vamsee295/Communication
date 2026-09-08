@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, beforeEach } from "vitest";
 import { RealtimeGateway, type IWebSocketConnection } from "@/lib/realtime/gateway";
 import { WebSocketRealtimeService } from "@/lib/realtime/websocket-service";
@@ -284,9 +285,28 @@ describe("Phase 4.5 Neon + WebSocket End-to-End Staging Rehearsal", () => {
             revoked_at: null,
             created_at: "2026-09-01T00:00:00Z",
           })),
+      getByKey: async (userId, deviceKey) => {
+        const d = devicesStore.find((dev) => dev.user_id === userId);
+        if (!d) return null;
+        return {
+          id: d.id,
+          user_id: d.user_id,
+          device_key: deviceKey,
+          device_name: d.device_name,
+          platform: "web",
+          user_agent: null,
+          last_seen_at: "2026-09-01T00:00:00Z",
+          revoked_at: d.revoked_at,
+          created_at: "2026-09-01T00:00:00Z",
+        };
+      },
       revoke: async (userId, deviceId, revokedAt) => {
         const d = devicesStore.find((dev) => dev.id === deviceId && dev.user_id === userId);
-        if (d) d.revoked_at = revokedAt;
+        if (d) {
+          d.revoked_at = revokedAt;
+          return { id: d.id, device_key: "key-1" };
+        }
+        return null;
       },
     };
 

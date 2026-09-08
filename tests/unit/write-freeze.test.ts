@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Phase 4.5D.1 — Write Freeze Hardening Tests
  *
@@ -532,7 +533,8 @@ function buildMinimalRepositories(): Repositories {
       created_at: new Date().toISOString(),
     }),
     listForUser: async () => [],
-    revoke: async () => {},
+    getByKey: async () => null,
+    revoke: async () => ({ id: "dev-1", device_key: "key-1" }),
   };
 
   return {

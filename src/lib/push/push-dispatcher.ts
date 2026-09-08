@@ -33,8 +33,30 @@ export class PushDispatcher implements PostCommitConsumer {
       if (!members.length) return;
 
       // Filter out muted members
-      const activeMemberIds = members.filter((m) => !m.muted).map((m) => m.user_id);
+      let activeMemberIds = members.filter((m) => !m.muted).map((m) => m.user_id);
       if (!activeMemberIds.length) return;
+
+      // Filter out blocked users
+      const blocked = await sql<{ id: string }[]>`
+        SELECT requester_id AS id FROM public.friendships
+        WHERE addressee_id = ${senderId} AND status = 'blocked'
+          AND requester_id = ANY(${activeMemberIds})
+        UNION
+        SELECT addressee_id AS id FROM public.friendships
+        WHERE requester_id = ${senderId} AND status = 'blocked'
+          AND addressee_id = ANY(${activeMemberIds})
+      `;
+      const blockedIds = new Set(blocked.map((b) => b.id));
+      activeMemberIds = activeMemberIds.filter((id) => !blockedIds.has(id));
+
+      if (!activeMemberIds.length) return;
+
+      // Fetch metadata
+      const senderRows = await sql<{ display_name: string }[]>`SELECT display_name FROM public.user_profiles WHERE id = ${senderId}`;
+      const senderName = senderRows[0]?.display_name || "Someone";
+
+      const convRows = await sql<{ kind: string; title: string | null }[]>`SELECT kind, title FROM public.conversations WHERE id = ${conversation_id}`;
+      const groupName = convRows[0]?.kind === "group" ? convRows[0]?.title || undefined : undefined;
 
       // 2. Fetch push subscriptions for active members
       const subscriptions = await sql<StoredPushSubscription[]>`
@@ -60,6 +82,9 @@ export class PushDispatcher implements PostCommitConsumer {
         title: "New message",
         body: "New message in Ghostline",
         notificationId: event_id,
+        conversationId: conversation_id,
+        senderName: senderName,
+        groupName: groupName,
       };
 
       // 4. Dispatch push notifications in parallel with failure isolation

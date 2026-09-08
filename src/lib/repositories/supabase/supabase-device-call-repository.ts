@@ -34,13 +34,27 @@ export class SupabaseDeviceRepository implements DeviceRepository {
     return (data ?? []) as Device[];
   }
 
-  async revoke(userId: string, deviceId: string, revokedAt: string): Promise<void> {
-    const { error } = await this.supabase
+  async getByKey(userId: string, deviceKey: string): Promise<Device | null> {
+    const { data, error } = await this.supabase
+      .from("devices")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("device_key", deviceKey)
+      .maybeSingle();
+    if (error) mapInfraError(error);
+    return (data as Device | null) ?? null;
+  }
+
+  async revoke(userId: string, deviceId: string, revokedAt: string): Promise<{ id: string; device_key: string } | null> {
+    const { data, error } = await this.supabase
       .from("devices")
       .update({ revoked_at: revokedAt })
       .eq("id", deviceId)
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .select("id, device_key")
+      .maybeSingle();
     if (error) mapInfraError(error);
+    return (data as { id: string; device_key: string } | null) ?? null;
   }
 }
 
@@ -87,5 +101,14 @@ export class SupabaseCallRepository implements CallRepository {
       .limit(limit);
     if (error) mapInfraError(error);
     return (data ?? []) as Call[];
+  }
+
+  async deleteFromHistory(callId: string, userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from("calls")
+      .delete()
+      .eq("id", callId)
+      .or(`caller_id.eq.${userId},callee_id.eq.${userId}`);
+    if (error) mapInfraError(error);
   }
 }

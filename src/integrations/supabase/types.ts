@@ -108,18 +108,24 @@ export type Database = {
           id: string
           kind: Database["public"]["Enums"]["conversation_kind"]
           last_message_at: string
+          vanish_session_active_until: string | null
+          disappearing_messages_enabled: boolean
         }
         Insert: {
           created_at?: string
           id?: string
           kind?: Database["public"]["Enums"]["conversation_kind"]
           last_message_at?: string
+          vanish_session_active_until?: string | null
+          disappearing_messages_enabled?: boolean
         }
         Update: {
           created_at?: string
           id?: string
           kind?: Database["public"]["Enums"]["conversation_kind"]
           last_message_at?: string
+          vanish_session_active_until?: string | null
+          disappearing_messages_enabled?: boolean
         }
         Relationships: []
       }
@@ -309,6 +315,7 @@ export type Database = {
           edited_at: string | null
           forwarded_from_id: string | null
           id: string
+          is_vanish: boolean
           reply_to_id: string | null
           sender_id: string
         }
@@ -321,6 +328,7 @@ export type Database = {
           edited_at?: string | null
           forwarded_from_id?: string | null
           id?: string
+          is_vanish?: boolean
           reply_to_id?: string | null
           sender_id: string
         }
@@ -333,6 +341,7 @@ export type Database = {
           edited_at?: string | null
           forwarded_from_id?: string | null
           id?: string
+          is_vanish?: boolean
           reply_to_id?: string | null
           sender_id?: string
         }

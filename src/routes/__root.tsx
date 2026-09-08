@@ -16,6 +16,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { authService } from "@/lib/auth/session";
 import { PresenceProvider } from "@/components/presence-provider";
 import { CallProvider } from "@/components/calls/call-provider";
+import { DeviceSecurityProvider } from "@/components/device-security-provider";
 
 function NotFoundComponent() {
   return (
@@ -137,11 +138,13 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeBootstrap />
-      <PresenceProvider>
-        <CallProvider>
-          <Outlet />
-        </CallProvider>
-      </PresenceProvider>
+      <DeviceSecurityProvider>
+        <PresenceProvider>
+          <CallProvider>
+            <Outlet />
+          </CallProvider>
+        </PresenceProvider>
+      </DeviceSecurityProvider>
       <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );

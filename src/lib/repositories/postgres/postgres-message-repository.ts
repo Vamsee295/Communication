@@ -13,7 +13,7 @@ export class PostgresMessageRepository implements MessageRepository {
       const rows = await this.db<Message[]>`
         SELECT id, conversation_id, sender_id, body, client_id,
                created_at::text, edited_at::text, deleted_at::text,
-               reply_to_id, forwarded_from_id
+               reply_to_id, forwarded_from_id, is_vanish
           FROM public.messages
          WHERE conversation_id = ${conversationId}
            AND created_at < ${opts.before}
@@ -26,7 +26,7 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db<Message[]>`
       SELECT id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE conversation_id = ${conversationId}
        ORDER BY created_at DESC, id DESC
@@ -40,7 +40,7 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db<Message[]>`
       SELECT id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE id = ANY(${ids});
     `;
@@ -51,7 +51,7 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db<Message[]>`
       SELECT id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE id = ${id}
        LIMIT 1;
@@ -62,14 +62,14 @@ export class PostgresMessageRepository implements MessageRepository {
   async insert(row: InsertMessage): Promise<Message> {
     const rows = await this.db<Message[]>`
       INSERT INTO public.messages (
-        conversation_id, sender_id, body, client_id, reply_to_id, forwarded_from_id
+        conversation_id, sender_id, body, client_id, reply_to_id, forwarded_from_id, is_vanish
       ) VALUES (
         ${row.conversation_id}, ${row.sender_id}, ${row.body},
-        ${row.client_id ?? null}, ${row.reply_to_id ?? null}, ${row.forwarded_from_id ?? null}
+        ${row.client_id ?? null}, ${row.reply_to_id ?? null}, ${row.forwarded_from_id ?? null}, ${row.is_vanish ?? false}
       )
       RETURNING id, conversation_id, sender_id, body, client_id,
                 created_at::text, edited_at::text, deleted_at::text,
-                reply_to_id, forwarded_from_id;
+                reply_to_id, forwarded_from_id, is_vanish;
     `;
     return rows[0];
   }
@@ -78,7 +78,7 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db<Message[]>`
       SELECT id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE conversation_id = ${conversationId}
          AND sender_id = ${senderId}
@@ -95,7 +95,7 @@ export class PostgresMessageRepository implements MessageRepository {
        WHERE id = ${id}
    RETURNING id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id;
+             reply_to_id, forwarded_from_id, is_vanish;
     `;
     if (!rows[0]) throw new Error("Message not found");
     return rows[0];
@@ -105,6 +105,14 @@ export class PostgresMessageRepository implements MessageRepository {
     await this.db`
       DELETE FROM public.messages
        WHERE id = ${id};
+    `;
+  }
+
+  async deleteVanishMessages(conversationId: string): Promise<void> {
+    await this.db`
+      DELETE FROM public.messages
+       WHERE conversation_id = ${conversationId}
+         AND is_vanish = true;
     `;
   }
 
@@ -132,7 +140,7 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db<Message[]>`
       SELECT id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE conversation_id = ${conversationId}
          AND body ILIKE ${term}
@@ -148,7 +156,7 @@ export class PostgresMessageRepository implements MessageRepository {
     const rows = await this.db<Message[]>`
       SELECT id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE conversation_id = ANY(${conversationIds})
          AND body ILIKE ${term}
@@ -164,7 +172,7 @@ export class PostgresMessageRepository implements MessageRepository {
       SELECT DISTINCT ON (conversation_id)
              id, conversation_id, sender_id, body, client_id,
              created_at::text, edited_at::text, deleted_at::text,
-             reply_to_id, forwarded_from_id
+             reply_to_id, forwarded_from_id, is_vanish
         FROM public.messages
        WHERE conversation_id = ANY(${conversationIds})
        ORDER BY conversation_id, created_at DESC

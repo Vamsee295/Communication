@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { MessageCircle, Phone, User, Settings, UserPlus, Search } from "lucide-react";
+import { MessageCircle, Phone, User, Settings, UserPlus, Search, UsersRound } from "lucide-react";
 import { listConversations } from "@/lib/chat.functions";
 
 type Command = {
@@ -68,9 +68,13 @@ export function CommandPalette() {
     ];
     const chats: Command[] = (conversations.data ?? []).map((c) => ({
       id: `conv-${c.id}`,
-      label: c.other?.display_name ?? c.other?.username ?? "Ghost",
-      hint: "Open chat",
-      icon: MessageCircle,
+      label: c.kind === "group"
+        ? (c.title ?? "Group chat")
+        : (c.other?.display_name ?? c.other?.username ?? "Ghost"),
+      hint: c.kind === "group"
+        ? `${c.member_count} ${c.member_count === 1 ? "member" : "members"}`
+        : "Open chat",
+      icon: c.kind === "group" ? UsersRound : MessageCircle,
       run: () => navigate({ to: "/chats/$conversationId", params: { conversationId: c.id } }),
     }));
     const needle = q.trim().toLowerCase();

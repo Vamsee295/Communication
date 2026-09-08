@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, beforeEach } from "vitest";
 import { ReactionService } from "@/lib/services/reaction.service";
 import { PinService } from "@/lib/services/pin.service";

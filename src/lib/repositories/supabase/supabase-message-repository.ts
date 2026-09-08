@@ -26,6 +26,10 @@ export class SupabaseMessageRepository implements MessageRepository {
     return (data ?? []) as Message[];
   }
 
+  async deleteVanishMessages(conversationId: string): Promise<void> {
+    throw new Error("Supabase driver does not support deleteVanishMessages — use Neon direct client instead.");
+  }
+
   async getById(id: string): Promise<Message | null> {
     const { data, error } = await this.supabase.from("messages").select("*").eq("id", id).maybeSingle();
     if (error) mapInfraError(error);

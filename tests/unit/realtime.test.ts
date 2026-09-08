@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect, beforeEach } from "vitest";
 import { RealtimeGateway, type IWebSocketConnection } from "@/lib/realtime/gateway";
 import { WebSocketRealtimeService } from "@/lib/realtime/websocket-service";

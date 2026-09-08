@@ -25,8 +25,7 @@ export class PostgresDeviceRepository implements DeviceRepository {
          SET device_name = EXCLUDED.device_name,
              platform = EXCLUDED.platform,
              user_agent = EXCLUDED.user_agent,
-             last_seen_at = EXCLUDED.last_seen_at,
-             revoked_at = null
+             last_seen_at = EXCLUDED.last_seen_at
    RETURNING id, user_id, device_key, device_name, platform, user_agent,
              last_seen_at::text, revoked_at::text, created_at::text;
     `;
@@ -44,12 +43,25 @@ export class PostgresDeviceRepository implements DeviceRepository {
     return rows;
   }
 
-  async revoke(userId: string, deviceId: string, revokedAt: string): Promise<void> {
-    await this.db`
+  async getByKey(userId: string, deviceKey: string): Promise<Device | null> {
+    const rows = await this.db<Device[]>`
+      SELECT id, user_id, device_key, device_name, platform, user_agent,
+             last_seen_at::text, revoked_at::text, created_at::text
+        FROM public.devices
+       WHERE user_id = ${userId} AND device_key = ${deviceKey}
+       LIMIT 1;
+    `;
+    return rows[0] ?? null;
+  }
+
+  async revoke(userId: string, deviceId: string, revokedAt: string): Promise<{ id: string; device_key: string } | null> {
+    const rows = await this.db<Array<{ id: string; device_key: string }>>`
       UPDATE public.devices
          SET revoked_at = ${revokedAt}
-       WHERE id = ${deviceId} AND user_id = ${userId};
+       WHERE id = ${deviceId} AND user_id = ${userId}
+   RETURNING id, device_key;
     `;
+    return rows[0] ?? null;
   }
 }
 
@@ -124,5 +136,14 @@ export class PostgresCallRepository implements CallRepository {
        LIMIT ${limit ?? 50};
     `;
     return rows;
+  }
+
+  async deleteFromHistory(callId: string, userId: string): Promise<void> {
+    // Only the caller or callee can delete a call from their history.
+    await this.db`
+      DELETE FROM public.calls
+       WHERE id = ${callId}
+         AND (caller_id = ${userId} OR callee_id = ${userId});
+    `;
   }
 }

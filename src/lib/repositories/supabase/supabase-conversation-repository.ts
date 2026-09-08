@@ -14,6 +14,14 @@ export class SupabaseConversationRepository implements ConversationRepository {
     return id as string;
   }
 
+  async keepVanishSessionAlive(conversationId: string): Promise<void> {
+    throw new Error("Supabase driver does not support keepVanishSessionAlive — use Neon direct client instead.");
+  }
+
+  async setDisappearingMessages(conversationId: string, enabled: boolean): Promise<void> {
+    throw new Error("Supabase driver does not support setDisappearingMessages — use Neon direct client instead.");
+  }
+
   async createGroup(): Promise<string> {
     throw new Error("Supabase driver does not support group creation");
   }
@@ -32,6 +40,62 @@ export class SupabaseConversationRepository implements ConversationRepository {
 
   async updateGroupTitle(): Promise<void> {
     throw new Error("Supabase driver does not support group title updates");
+  }
+
+  async updateGroupDescription(): Promise<void> {
+    throw new Error("Supabase driver does not support group description updates");
+  }
+
+  async updateGroupAvatar(): Promise<void> {
+    throw new Error("Supabase driver does not support group avatar updates");
+  }
+
+  async getGroupPermissions(): Promise<any> {
+    throw new Error("Supabase driver does not support group permissions");
+  }
+
+  async setGroupPermissions(): Promise<any> {
+    throw new Error("Supabase driver does not support group permissions");
+  }
+
+  async getMemberRestriction(): Promise<any> {
+    throw new Error("Supabase driver does not support member restrictions");
+  }
+
+  async listMemberRestrictions(): Promise<any[]> {
+    throw new Error("Supabase driver does not support member restrictions");
+  }
+
+  async setMemberRestriction(): Promise<any> {
+    throw new Error("Supabase driver does not support member restrictions");
+  }
+
+  async removeMemberRestriction(): Promise<void> {
+    throw new Error("Supabase driver does not support member restrictions");
+  }
+
+  async createInviteLink(): Promise<any> {
+    throw new Error("Supabase driver does not support group invite links");
+  }
+
+  async revokeInviteLink(): Promise<void> {
+    throw new Error("Supabase driver does not support group invite links");
+  }
+
+  async listInviteLinks(): Promise<any[]> {
+    throw new Error("Supabase driver does not support group invite links");
+  }
+
+  async joinViaInviteLink(): Promise<any> {
+    throw new Error("Supabase driver does not support group invite links");
+  }
+
+  async logAdminAction(): Promise<void> {
+    throw new Error("Supabase driver does not support group admin actions");
+  }
+
+  async listAdminActions(): Promise<any[]> {
+    throw new Error("Supabase driver does not support group admin actions");
   }
 
   async listMyMemberships(userId: string): Promise<ConversationMemberFlags[]> {
