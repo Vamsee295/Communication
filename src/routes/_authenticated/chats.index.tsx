@@ -16,6 +16,8 @@ import {
   Bell,
   BellOff,
   Archive,
+  ArchiveRestore,
+  ChevronRight,
   Trash2,
   ShieldBan,
   MailOpen,
@@ -43,19 +45,6 @@ import { usePresence } from "@/components/presence-provider";
 import { realtimeService } from "@/lib/realtime/create-realtime";
 
 export const Route = createFileRoute("/_authenticated/chats/")({
-  head: () => ({
-    meta: [
-      { title: "Chats · Ghostline" },
-      {
-        name: "description",
-        content: "Your private Ghostline conversations — pinned chats, unread counts and live presence.",
-      },
-      { property: "og:title", content: "Chats · Ghostline" },
-      { property: "og:description", content: "Private conversations with live presence on Ghostline." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-    ],
-  }),
   component: ChatsPage,
 });
 
@@ -65,38 +54,42 @@ type Confirm =
   | null;
 
 function ChatsPage() {
-  const register = useServerFn(registerDevice);
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+
   const fetchConversations = useServerFn(listConversations);
-  const fetchProfile = useServerFn(getMyProfile);
+  const fetchMyProfile = useServerFn(getMyProfile);
   const fetchFriendships = useServerFn(listFriendships);
-  const doCreateGroup = useServerFn(createGroupConversation);
+  const doRegister = useServerFn(registerDevice);
   const doFlags = useServerFn(setConversationFlags);
   const doUnread = useServerFn(markConversationUnread);
   const doLeave = useServerFn(leaveConversation);
   const doBlock = useServerFn(blockContact);
   const doMarkRead = useServerFn(markRead);
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const { isUserOnline } = usePresence();
-
-  const [showNewGroup, setShowNewGroup] = useState(false);
+  const doCreateGroup = useServerFn(createGroupConversation);
 
   const profile = useQuery({
-    queryKey: ["me"],
-    queryFn: () => fetchProfile(),
+    queryKey: ["my-profile"],
+    queryFn: () => fetchMyProfile(),
   });
 
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const { isUserOnline } = usePresence();
+
+  // Register device key on mount once we know our profile
   useEffect(() => {
-    register({
+    if (!profile.data?.id) return;
+    doRegister({
       data: {
-        device_key: getDeviceKey(),
+        device_key: getDeviceKey(profile.data.id),
         device_name: guessDeviceName(),
         platform: "web",
         user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 500) : undefined,
       },
     }).catch(() => {});
-  }, [register]);
+  }, [profile.data?.id, doRegister]);
 
+  // If user has no username yet, bounce them to onboarding
   useEffect(() => {
     if (profile.data && !profile.data.username) {
       window.location.replace("/onboarding");
@@ -124,6 +117,7 @@ function ChatsPage() {
   }, [profile.data?.id, qc]);
 
   const [q, setQ] = useState("");
+  const [showArchivedView, setShowArchivedView] = useState(false);
   const [mobileSearch, setMobileSearch] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -135,7 +129,14 @@ function ChatsPage() {
   const flags = useMutation({
     mutationFn: (v: { conversation_id: string; pinned?: boolean; muted?: boolean; archived?: boolean }) =>
       doFlags({ data: v }),
-    onSuccess: refresh,
+    onSuccess: (_, variables) => {
+      if (variables.archived === true) {
+        toast.success("Chat archived");
+      } else if (variables.archived === false) {
+        toast.success("Chat unarchived");
+      }
+      refresh();
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not update chat"),
   });
   const unread = useMutation({
@@ -172,16 +173,19 @@ function ChatsPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not create group"),
   });
 
+  const archivedItems = useMemo(() => items.filter((c) => c.archived), [items]);
+  const activeItems = useMemo(() => items.filter((c) => !c.archived), [items]);
+
   const filtered = useMemo(() => {
-    const visible = items.filter((c) => !c.archived);
-    if (!trimmed) return visible;
+    const pool = showArchivedView ? archivedItems : activeItems;
+    if (!trimmed) return pool;
     const needle = trimmed.toLowerCase();
-    return visible.filter((c) => {
-      const n = (c.other?.display_name ?? "").toLowerCase();
+    return pool.filter((c) => {
+      const n = (c.other?.display_name ?? c.title ?? "").toLowerCase();
       const u = (c.other?.username ?? "").toLowerCase();
       return n.includes(needle) || u.includes(needle);
     });
-  }, [items, trimmed]);
+  }, [showArchivedView, archivedItems, activeItems, trimmed]);
 
   const pinned = filtered.filter((c) => c.pinned);
   const recent = filtered.filter((c) => !c.pinned);
@@ -215,6 +219,7 @@ function ChatsPage() {
       onPin={() => flags.mutate({ conversation_id: c.id, pinned: !c.pinned })}
       onMute={() => flags.mutate({ conversation_id: c.id, muted: !c.muted })}
       onArchive={() => flags.mutate({ conversation_id: c.id, archived: true })}
+      onUnarchive={() => flags.mutate({ conversation_id: c.id, archived: false })}
       onDelete={() => setConfirm({ kind: "delete", conv: c })}
       onBlock={() => setConfirm({ kind: "block", conv: c })}
     />
@@ -222,70 +227,109 @@ function ChatsPage() {
 
   const renderResults = () => (
     <>
-            {filtered.length === 0 && !trimmed ? (
-              <div className="px-2">
-                <EmptyState />
-              </div>
-            ) : (
-              <>
-                {pinned.length > 0 && (
-                  <>
-                    <p className="mb-1 mt-1 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Pinned
-                    </p>
-                    <ul className="grid gap-0.5">{pinned.map(renderRow)}</ul>
-                    {recent.length > 0 && (
-                      <p className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Recent
-                      </p>
-                    )}
-                  </>
-                )}
-                <ul className="grid gap-0.5">{recent.map(renderRow)}</ul>
-              </>
-            )}
+      {!showArchivedView && archivedItems.length > 0 && !trimmed && (
+        <button
+          onClick={() => setShowArchivedView(true)}
+          className="group mb-2 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left transition hover:bg-surface-2/70 active:bg-surface-2"
+        >
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary shadow-xs">
+              <Archive className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="text-[14px] font-semibold text-foreground">Archived</span>
+              <p className="text-[11px] text-muted-foreground">
+                {archivedItems.length} conversation{archivedItems.length === 1 ? "" : "s"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-surface-2 px-1.5 text-[10px] font-bold text-muted-foreground border border-border">
+              {archivedItems.length}
+            </span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </div>
+        </button>
+      )}
 
-            {trimmed.length >= 2 && (globalHits.data ?? []).length > 0 && (
-              <div className="mt-6">
-                <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                  Messages
+      {showArchivedView && filtered.length === 0 ? (
+        <div className="py-16 text-center text-muted-foreground">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 text-muted-foreground">
+            <Archive className="h-6 w-6" />
+          </div>
+          <p className="text-[14px] font-semibold text-foreground">No archived chats</p>
+          <p className="mt-1 text-[12px] text-muted-foreground">Archived conversations will appear here.</p>
+          <button
+            onClick={() => setShowArchivedView(false)}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary/10 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary/15 transition cursor-pointer"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to active chats
+          </button>
+        </div>
+      ) : filtered.length === 0 && !trimmed ? (
+        <div className="px-2">
+          <EmptyState />
+        </div>
+      ) : (
+        <>
+          {pinned.length > 0 && (
+            <>
+              <p className="mb-1 mt-1 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Pinned
+              </p>
+              <ul className="grid gap-0.5">{pinned.map(renderRow)}</ul>
+              {recent.length > 0 && (
+                <p className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  Recent
                 </p>
-                <ul className="grid gap-0.5">
-                  {(globalHits.data ?? []).map((h) => {
-                    const name = h.other?.display_name ?? h.other?.username ?? "Ghost";
-                    return (
-                      <li key={h.message.id}>
-                        <button
-                          onClick={() =>
-                            navigate({
-                              to: "/chats/$conversationId",
-                              params: { conversationId: h.conversation_id },
-                            })
-                          }
-                          className="w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-surface-2/70"
-                        >
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="truncate text-[13px] font-semibold">{name}</p>
-                            <p className="shrink-0 text-[10px] text-muted-foreground">
-                              {new Date(h.message.created_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <p className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">
-                            {h.message.body}
-                          </p>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-            {trimmed.length >= 2 &&
-              globalHits.isSuccess &&
-              (globalHits.data ?? []).length === 0 &&
-              filtered.length === 0 && (
-                <p className="mt-10 text-center text-sm text-muted-foreground">No matches for "{trimmed}"</p>
               )}
+            </>
+          )}
+          <ul className="grid gap-0.5">{recent.map(renderRow)}</ul>
+        </>
+      )}
+
+      {trimmed.length >= 2 && (globalHits.data ?? []).length > 0 && (
+        <div className="mt-6">
+          <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+            Messages
+          </p>
+          <ul className="grid gap-0.5">
+            {(globalHits.data ?? []).map((h) => {
+              const name = h.other?.display_name ?? h.other?.username ?? "Ghost";
+              return (
+                <li key={h.message.id}>
+                  <button
+                    onClick={() =>
+                      navigate({
+                        to: "/chats/$conversationId",
+                        params: { conversationId: h.conversation_id },
+                      })
+                    }
+                    className="w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-surface-2/70"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-[13px] font-semibold">{name}</p>
+                      <p className="shrink-0 text-[10px] text-muted-foreground">
+                        {new Date(h.message.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-[12px] text-muted-foreground">
+                      {h.message.body}
+                    </p>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {trimmed.length >= 2 &&
+        globalHits.isSuccess &&
+        (globalHits.data ?? []).length === 0 &&
+        filtered.length === 0 && (
+          <p className="mt-10 text-center text-sm text-muted-foreground">No matches for "{trimmed}"</p>
+        )}
     </>
   );
 
@@ -296,24 +340,42 @@ function ChatsPage() {
         <section className="flex min-w-0 flex-1 flex-col bg-background lg:max-w-[400px] lg:border-r lg:border-border">
           <header className="sticky top-0 z-20 border-b border-border bg-background/80 px-4 pb-3 pt-6 backdrop-blur-xl lg:pt-5">
             <div className="flex items-center justify-between">
-              <h1 className="text-[22px] font-extrabold tracking-tight text-foreground">Chats</h1>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowNewGroup(true)}
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
-                  aria-label="New Group"
-                  title="New group chat"
-                >
-                  <UsersRound className="h-[17px] w-[17px]" />
-                </button>
-                <Link
-                  to="/contacts"
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-white shadow-sm shadow-primary/30 transition hover:bg-[#1467D8]"
-                  aria-label="Add friend"
-                >
-                  <UserPlus className="h-[17px] w-[17px]" />
-                </Link>
-              </div>
+              {showArchivedView ? (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setShowArchivedView(false)}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-muted-foreground transition hover:bg-surface-3 hover:text-foreground cursor-pointer"
+                    aria-label="Back to active chats"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                  <div>
+                    <h1 className="text-[20px] font-extrabold tracking-tight text-foreground">Archived Chats</h1>
+                    <p className="text-[11px] text-muted-foreground">{archivedItems.length} archived</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h1 className="text-[22px] font-extrabold tracking-tight text-foreground">Chats</h1>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowNewGroup(true)}
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                      aria-label="New Group"
+                      title="New group chat"
+                    >
+                      <UsersRound className="h-[17px] w-[17px]" />
+                    </button>
+                    <Link
+                      to="/contacts"
+                      className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary text-white shadow-sm shadow-primary/30 transition hover:bg-[#1467D8]"
+                      aria-label="Add friend"
+                    >
+                      <UserPlus className="h-[17px] w-[17px]" />
+                    </Link>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="focus-ring mt-3 flex items-center gap-2.5 rounded-xl border border-border bg-surface-2/50 px-3.5 py-2 transition">
@@ -327,7 +389,7 @@ function ChatsPage() {
                     setMobileSearch(true);
                   }
                 }}
-                placeholder="Search chats, people, or messages..."
+                placeholder={showArchivedView ? "Search archived chats..." : "Search chats, people, or messages..."}
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
               {q ? (
@@ -458,6 +520,7 @@ function ChatRow({
   onPin,
   onMute,
   onArchive,
+  onUnarchive,
   onDelete,
   onBlock,
 }: {
@@ -471,6 +534,7 @@ function ChatRow({
   onPin: () => void;
   onMute: () => void;
   onArchive: () => void;
+  onUnarchive?: () => void;
   onDelete: () => void;
   onBlock: () => void;
 }) {
@@ -512,7 +576,7 @@ function ChatRow({
         run();
       }}
       className={[
-        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-surface-2",
+        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-surface-2 cursor-pointer",
         danger ? "text-destructive" : "text-foreground",
       ].join(" ")}
     >
@@ -635,7 +699,7 @@ function ChatRow({
             onOpenMenu(!menuOpen);
           }}
           aria-label={`Options for ${name}`}
-          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground opacity-0 transition hover:bg-border focus:opacity-100 group-hover:opacity-100"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground opacity-0 transition hover:bg-border focus:opacity-100 group-hover:opacity-100 cursor-pointer"
         >
           <MoreVertical className="h-4 w-4" />
         </button>
@@ -656,7 +720,17 @@ function ChatRow({
               c.muted ? "Unmute" : "Mute",
               onMute,
             )}
-            {item(<Archive className="h-4 w-4" />, "Archive", onArchive)}
+            {c.archived
+              ? item(
+                  <ArchiveRestore className="h-4 w-4" />,
+                  isGroup ? "Unarchive group" : "Unarchive chat",
+                  onUnarchive ?? onArchive,
+                )
+              : item(
+                  <Archive className="h-4 w-4" />,
+                  isGroup ? "Archive group" : "Archive chat",
+                  onArchive,
+                )}
             <div className="my-1 h-px bg-border" />
             {isGroup ? (
               item(<Trash2 className="h-4 w-4" />, "Leave group", onDelete, true)

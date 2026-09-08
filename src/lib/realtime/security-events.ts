@@ -21,7 +21,7 @@ export async function broadcastSessionRevoked(
   try {
     let ch = outChannels.get(targetUserId);
     if (!ch) {
-      ch = supabase.channel(`chat:global:${targetUserId}`, {
+      ch = supabase.channel(`security:user:${targetUserId}`, {
         config: { broadcast: { self: false } },
       });
       outChannels.set(targetUserId, ch);
@@ -71,7 +71,7 @@ export async function serverBroadcastSessionRevoked(
       body: JSON.stringify({
         messages: [
           {
-            topic: `chat:global:${targetUserId}`,
+            topic: `security:user:${targetUserId}`,
             event: "session_revoked",
             payload: {
               type: "SESSION_REVOKED",

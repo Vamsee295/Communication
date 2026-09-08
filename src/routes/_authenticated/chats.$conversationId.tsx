@@ -38,6 +38,7 @@ import {
   Bell,
   BellOff,
   Archive,
+  ArchiveRestore,
   ShieldBan,
 } from "lucide-react";
 import {
@@ -202,6 +203,7 @@ function ChatRoom() {
 
   const isGroup = conv.data?.conversation.kind === "group";
   const isMuted = Boolean(conv.data?.my_flags?.muted);
+  const isArchived = Boolean(conv.data?.my_flags?.archived);
 
   const handleViewPins = () => {
     const pinList = pins.data?.pins ?? [];
@@ -250,12 +252,31 @@ function ChatRoom() {
           archived: true,
         },
       });
+      qc.invalidateQueries({ queryKey: ["conversation", conversationId] });
       qc.invalidateQueries({ queryKey: ["conversations"] });
       import("sonner").then((m) => m.toast.success(isGroup ? "Group archived" : "Chat archived"));
       navigate({ to: "/chats" });
     } catch (e) {
       import("sonner").then((m) =>
         m.toast.error(e instanceof Error ? e.message : "Failed to archive conversation"),
+      );
+    }
+  };
+
+  const handleUnarchive = async () => {
+    try {
+      await doFlags({
+        data: {
+          conversation_id: conversationId,
+          archived: false,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["conversation", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      import("sonner").then((m) => m.toast.success(isGroup ? "Group unarchived" : "Chat unarchived"));
+    } catch (e) {
+      import("sonner").then((m) =>
+        m.toast.error(e instanceof Error ? e.message : "Failed to unarchive conversation"),
       );
     }
   };
@@ -990,11 +1011,23 @@ function ChatRoom() {
                   <button
                     onClick={() => {
                       setHeaderMenu(false);
-                      handleArchive();
+                      if (isArchived) {
+                        handleUnarchive();
+                      } else {
+                        handleArchive();
+                      }
                     }}
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition cursor-pointer"
                   >
-                    <Archive className="h-4 w-4 text-muted-foreground" /> Archive Group
+                    {isArchived ? (
+                      <>
+                        <ArchiveRestore className="h-4 w-4 text-muted-foreground" /> Unarchive Group
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="h-4 w-4 text-muted-foreground" /> Archive Group
+                      </>
+                    )}
                   </button>
                   <div className="my-1.5 h-px bg-border/60" />
                   <button
@@ -1078,11 +1111,23 @@ function ChatRoom() {
                   <button
                     onClick={() => {
                       setHeaderMenu(false);
-                      handleArchive();
+                      if (isArchived) {
+                        handleUnarchive();
+                      } else {
+                        handleArchive();
+                      }
                     }}
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition"
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] text-foreground hover:bg-surface-2 transition cursor-pointer"
                   >
-                    <Archive className="h-4 w-4 text-muted-foreground" /> Archive Chat
+                    {isArchived ? (
+                      <>
+                        <ArchiveRestore className="h-4 w-4 text-muted-foreground" /> Unarchive Chat
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="h-4 w-4 text-muted-foreground" /> Archive Chat
+                      </>
+                    )}
                   </button>
                   <div className="my-1.5 h-px bg-border/60" />
                   <button

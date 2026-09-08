@@ -47,7 +47,7 @@ export function DeviceSecurityProvider({ children }: { children: React.ReactNode
       const deviceKey = getDeviceKey(userId);
 
       // Fast Path: Listen for Realtime security events
-      activeChannel = supabase.channel(`chat:global:${userId}`, {
+      activeChannel = supabase.channel(`security:user:${userId}`, {
         config: { broadcast: { self: false } },
       });
 
@@ -105,7 +105,7 @@ export function DeviceSecurityProvider({ children }: { children: React.ReactNode
         void setupListener();
       } else if (event === "SIGNED_OUT") {
         if (activeChannel) {
-          void activeChannel.unsubscribe();
+          void supabase.removeChannel(activeChannel);
           activeChannel = null;
         }
       }
@@ -115,7 +115,7 @@ export function DeviceSecurityProvider({ children }: { children: React.ReactNode
       isCancelled = true;
       if (cleanupListeners) cleanupListeners();
       if (validationTimer) clearInterval(validationTimer);
-      if (activeChannel) void activeChannel.unsubscribe();
+      if (activeChannel) void supabase.removeChannel(activeChannel);
       sub.subscription.unsubscribe();
     };
   }, []);
