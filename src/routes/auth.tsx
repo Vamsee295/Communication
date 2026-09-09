@@ -253,9 +253,12 @@ function AuthPage() {
                
                {mode === "signin" && (
                  <div className="flex justify-end">
-                   <button type="button" className="text-[13px] font-semibold text-[#64748B] hover:text-primary transition-colors">
+                   <Link
+                     to="/forgot-password"
+                     className="text-[13px] font-semibold text-[#64748B] hover:text-primary transition-colors"
+                   >
                      Forgot password?
-                   </button>
+                   </Link>
                  </div>
                )}
              </div>

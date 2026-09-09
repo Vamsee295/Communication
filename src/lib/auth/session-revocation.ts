@@ -4,7 +4,7 @@ import { rotateDeviceKey } from "@/lib/device-key";
 let isRevoking = false;
 
 export const REVOCATION_STORAGE_KEY = "ghostline.logout_reason";
-export const DEFAULT_REVOCATION_REASON = "Your Ghostline session was signed out from another device.";
+export const DEFAULT_REVOCATION_REASON = "Your session was signed out from another device.";
 
 /**
  * Authoritatively handles remote or local session revocation:
@@ -27,6 +27,7 @@ export async function handleSessionRevocation(reason: string = DEFAULT_REVOCATIO
     // Terminate Supabase authentication session
     await authService.signOut().catch(() => {});
   } finally {
+    isRevoking = false;
     if (typeof window !== "undefined") {
       // Force navigation to /auth
       window.location.replace("/auth");
@@ -44,4 +45,12 @@ export function popRevocationReason(): string | null {
     sessionStorage.removeItem(REVOCATION_STORAGE_KEY);
   }
   return reason;
+}
+
+/**
+ * Unconditionally clears any pending revocation notice without returning it.
+ */
+export function clearRevocationReason(): void {
+  if (typeof window === "undefined") return;
+  sessionStorage.removeItem(REVOCATION_STORAGE_KEY);
 }

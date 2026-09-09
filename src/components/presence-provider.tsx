@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, useRef, useCallback, type ReactNode } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { authService } from "@/lib/auth/session";
 import { supabase } from "@/integrations/supabase/client";
+import { heartbeatLastSeen } from "@/lib/profile.functions";
 
 export type UserPresenceData = {
   user_id: string;
@@ -34,9 +36,6 @@ const PresenceContext = createContext<PresenceContextType>({
 export function usePresence() {
   return useContext(PresenceContext);
 }
-
-// Remove old statusLabel function as it is now replaced by getUserStatusLabel in context
-// and formatLastSeen helper.
 
 export function formatLastSeen(lastSeenAt: string | null | undefined): string {
   if (!lastSeenAt) return "Offline";
@@ -75,9 +74,17 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
   const tabIdRef = useRef<string>(Math.random().toString(36).substring(2, 10));
   const activeConvIdRef = useRef<string | null>(null);
-  
+  const lastPersistedAtRef = useRef<number>(0);
+
+  const heartbeatLastSeenFn = useServerFn(heartbeatLastSeen);
+  const heartbeatLastSeenRef = useRef(heartbeatLastSeenFn);
+  heartbeatLastSeenRef.current = heartbeatLastSeenFn;
+
   useEffect(() => {
     activeConvIdRef.current = activeConversationId;
+    if (process.env.NODE_ENV !== "production" && activeConversationId) {
+      console.debug("[ACTIVE_CHAT] conversation ID", activeConversationId);
+    }
   }, [activeConversationId]);
 
   // Auth setup
@@ -95,16 +102,24 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const updateMyLastSeen = useCallback(async (userId: string) => {
-    try {
-      await supabase
-        .from("profiles")
-        .update({ last_seen: new Date().toISOString() })
-        .eq("id", userId);
-    } catch {
-      // Best effort update.
+  const persistLastSeenToDb = useCallback(async (force = false) => {
+    if (!myId) return;
+    const now = Date.now();
+    // Throttle non-forced updates: min 45 seconds between periodic database writes
+    if (!force && now - lastPersistedAtRef.current < 45000) {
+      return;
     }
-  }, []);
+    lastPersistedAtRef.current = now;
+    const isoString = new Date(now).toISOString();
+    try {
+      await heartbeatLastSeenRef.current({ data: { lastSeen: isoString } });
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[LAST_SEEN] persisted timestamp", isoString);
+      }
+    } catch {
+      // Best-effort update.
+    }
+  }, [myId]);
 
   useEffect(() => {
     if (!myId) {
@@ -123,6 +138,9 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         newMap.set(uid, payloads);
       }
       setPresences(newMap);
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[PRESENCE] online state synced", { activeUsers: newMap.size });
+      }
     };
 
     channel
@@ -130,8 +148,8 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       .on("presence", { event: "join" }, syncPresence)
       .on("presence", { event: "leave" }, syncPresence);
 
-    const sendHeartbeat = () => {
-      const isVisible = document.visibilityState === "visible";
+    const sendPresenceHeartbeat = () => {
+      const isVisible = typeof document !== "undefined" ? document.visibilityState === "visible" : true;
       const payload: UserPresenceData = {
         user_id: myId,
         active_conversation_id: isVisible ? activeConvIdRef.current : null,
@@ -143,57 +161,99 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
 
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
-        sendHeartbeat();
+        sendPresenceHeartbeat();
+        // Record initial database last_seen
+        persistLastSeenToDb(false);
       }
     });
 
-    const heartbeatInterval = setInterval(() => {
-      sendHeartbeat();
-    }, 10000);
+    // 1. Live presence heartbeat: every 20s
+    const presenceHeartbeatInterval = setInterval(() => {
+      sendPresenceHeartbeat();
+    }, 20000);
 
+    // 2. Throttled database last_seen heartbeat: every 60s while visible
+    const dbHeartbeatInterval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        persistLastSeenToDb(false);
+      }
+    }, 60000);
+
+    // Lifecycle events
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        sendHeartbeat();
+        sendPresenceHeartbeat();
+        persistLastSeenToDb(false);
       } else {
-        sendHeartbeat();
-        // Fire best-effort update to last_seen in DB when hiding
-        updateMyLastSeen(myId);
+        sendPresenceHeartbeat();
+        persistLastSeenToDb(true);
       }
     };
-    
+
+    const handlePageHide = () => {
+      persistLastSeenToDb(true);
+      channel.untrack().catch(() => {});
+    };
+
+    const handleOnline = () => {
+      sendPresenceHeartbeat();
+      persistLastSeenToDb(false);
+    };
+
     const handleBeforeUnload = () => {
-      updateMyLastSeen(myId);
+      persistLastSeenToDb(true);
       channel.untrack().catch(() => {});
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("online", handleOnline);
     window.addEventListener("beforeunload", handleBeforeUnload);
 
+    // Capacitor Native App Lifecycle (if running on native platform)
+    let removeCapacitorListener: (() => void) | null = null;
+    const capacitorObj = typeof window !== "undefined" ? (window as unknown as { Capacitor?: { Plugins?: { App?: { addListener: (event: string, cb: (state: { isActive: boolean }) => void) => Promise<{ remove: () => void }> } } } }).Capacitor : undefined;
+    if (capacitorObj?.Plugins?.App?.addListener) {
+      capacitorObj.Plugins.App.addListener("appStateChange", (state: { isActive: boolean }) => {
+        if (state.isActive) {
+          sendPresenceHeartbeat();
+          persistLastSeenToDb(false);
+        } else {
+          persistLastSeenToDb(true);
+        }
+      }).then((handle) => {
+        removeCapacitorListener = () => handle.remove();
+      }).catch(() => {});
+    }
+
     return () => {
-      clearInterval(heartbeatInterval);
+      clearInterval(presenceHeartbeatInterval);
+      clearInterval(dbHeartbeatInterval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("online", handleOnline);
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      
-      updateMyLastSeen(myId);
+      if (removeCapacitorListener) removeCapacitorListener();
+
+      persistLastSeenToDb(true);
       channel.untrack().catch(() => {});
       supabase.removeChannel(channel);
     };
-  }, [myId, updateMyLastSeen]);
+  }, [myId, persistLastSeenToDb]);
 
   // Helpers
 
   const isUserOnline = useCallback((userId: string | null | undefined): boolean => {
     if (!userId) return false;
     const userPresences = presences.get(userId) ?? [];
-    return userPresences.some(p => Date.now() - p.heartbeat_at < 30000);
+    return userPresences.some((p) => Date.now() - p.heartbeat_at < 45000);
   }, [presences]);
 
   const isUserActiveInChat = useCallback((userId: string | null | undefined, convId: string | null | undefined): boolean => {
     if (!userId || !convId) return false;
     const userPresences = presences.get(userId) ?? [];
-    return userPresences.some(p => 
-      Date.now() - p.heartbeat_at < 30000 && 
-      p.active_conversation_id === convId
+    return userPresences.some(
+      (p) => Date.now() - p.heartbeat_at < 45000 && p.active_conversation_id === convId
     );
   }, [presences]);
 
@@ -217,11 +277,10 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     return "Offline";
   }, [isUserOnline, isUserActiveInChat]);
 
-  // To force UI re-renders so `Last seen Xm ago` or stale states update automatically 
-  // even if no presence events come in, use a minute ticker.
+  // To update `Last seen Xm ago` or stale states automatically, use a 60-second ticker.
   const [ticker, setTicker] = useState(0);
   useEffect(() => {
-    const int = setInterval(() => setTicker((t) => t + 1), 10000);
+    const int = setInterval(() => setTicker((t) => t + 1), 60000);
     return () => clearInterval(int);
   }, []);
 

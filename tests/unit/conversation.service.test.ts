@@ -120,6 +120,20 @@ describe("ConversationService", () => {
     expect(flagsUpdated[convId]).toEqual({ pinned: true, muted: true });
   });
 
+  it("uses countUnreadBatch when available for optimal N+1 prevention", async () => {
+    let batchCalled = false;
+    mockMessagesRepo.countUnreadBatch = async (cIds, uId) => {
+      batchCalled = true;
+      expect(cIds).toEqual([convId]);
+      expect(uId).toBe(currentUserId);
+      return new Map([[convId, 7]]);
+    };
+
+    const list = await service.list();
+    expect(batchCalled).toBe(true);
+    expect(list[0].unread).toBe(7);
+  });
+
   it("leaves conversation", async () => {
     const res = await service.leave(convId);
     expect(res).toEqual({ ok: true });

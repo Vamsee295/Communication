@@ -100,7 +100,7 @@ function ChatsPage() {
     queryKey: ["conversations"],
     queryFn: () => fetchConversations(),
     enabled: !!profile.data?.username,
-    refetchInterval: 3000,
+    staleTime: 15_000,
   });
 
   // Realtime: any message insert refreshes conversation list

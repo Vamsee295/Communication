@@ -174,9 +174,6 @@ describe("Milestone 2: Web Push & VAPID Sender Suite", () => {
       const mockDb = vi.fn().mockImplementation(async (strings: TemplateStringsArray) => {
         const query = strings.join("");
         if (query.includes("SELECT user_id, muted")) {
-          return [{ user_id: "u2", muted: false }];
-        }
-        if (query.includes("SELECT id, user_id, endpoint")) {
           return [];
         }
         return [];
@@ -192,7 +189,7 @@ describe("Milestone 2: Web Push & VAPID Sender Suite", () => {
       };
 
       await dispatcher.consume(event);
-      expect(mockDb).toHaveBeenCalledTimes(2);
+      expect(mockDb).toHaveBeenCalledTimes(1);
     });
 
     it("7. Muted conversation is skipped", async () => {

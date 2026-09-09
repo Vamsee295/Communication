@@ -17,9 +17,11 @@ import {
   BellRing,
   Loader2,
   CheckCircle2,
+  KeyRound,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { authService } from "@/lib/auth/session";
+import { rotateDeviceKey } from "@/lib/device-key";
 import { getVapidPublicKey, savePushSubscription, removePushSubscription } from "@/lib/chat.functions";
 import { useTheme, type ThemeMode, type AccentColor } from "@/hooks/use-theme";
 
@@ -43,14 +45,25 @@ export const Route = createFileRoute("/_authenticated/settings")({
 // ── Utilities ────────────────────────────────────────────────────────────────
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const clean = base64String.trim();
+  const padding = "=".repeat((4 - (clean.length % 4)) % 4);
+  const base64 = (clean + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
   for (let i = 0; i < rawData.length; ++i) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+function areKeyBuffersEqual(buf1: ArrayBuffer | null | undefined, arr2: Uint8Array): boolean {
+  if (!buf1) return false;
+  const arr1 = new Uint8Array(buf1);
+  if (arr1.length !== arr2.length) return false;
+  for (let i = 0; i < arr1.length; i++) {
+    if (arr1[i] !== arr2[i]) return false;
+  }
+  return true;
 }
 
 // ── Shared layout primitives ─────────────────────────────────────────────────
@@ -125,23 +138,54 @@ function WebPushToggle() {
     setLoading(true);
     try {
       if (!supported) throw new Error("Push notifications are not supported in this browser");
+      if (window.isSecureContext === false) {
+        throw new Error("Push notifications require a secure (HTTPS) connection");
+      }
+      
       const perm = await Notification.requestPermission();
       setPermission(perm);
       if (perm !== "granted") {
-        throw new Error("Notification permission denied");
+        throw new Error("Notifications are blocked for Ghostline. Allow notifications in your browser settings and try again.");
       }
-      const reg = await navigator.serviceWorker.register("/ghostline-push-sw.js");
+
+      const reg = await navigator.serviceWorker.register("/ghostline-push-sw.js", { scope: "/" });
       await navigator.serviceWorker.ready;
+
       const { public_key } = await fetchVapidKey();
+      if (!public_key) {
+        throw new Error("Push notifications are temporarily unavailable.");
+      }
       const applicationServerKey = urlBase64ToUint8Array(public_key);
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
-      });
+
+      // Check existing subscription
+      const existingSub = await reg.pushManager.getSubscription();
+      let sub = existingSub;
+
+      const isSameKey = existingSub && areKeyBuffersEqual(existingSub.options?.applicationServerKey, applicationServerKey);
+
+      if (!existingSub || !isSameKey) {
+        if (existingSub) {
+          try {
+            await existingSub.unsubscribe();
+          } catch (unsubErr) {
+            console.warn("[WebPush] Stale subscription unsubscribe ignored:", unsubErr);
+          }
+        }
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey as unknown as BufferSource,
+        });
+      }
+
+      if (!sub) {
+        throw new Error("Ghostline couldn't register this device for notifications. Please try again.");
+      }
+
       const json = sub.toJSON();
       if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
         throw new Error("Invalid push subscription format from browser");
       }
+
       await saveSub({
         data: {
           endpoint: json.endpoint,
@@ -150,10 +194,31 @@ function WebPushToggle() {
           user_agent: navigator.userAgent.slice(0, 500),
         },
       });
+
       setSubscribed(true);
       toast.success("Web Push enabled successfully");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not enable push");
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      const errName = error.name;
+      const errMsg = error.message.toLowerCase();
+
+      console.error("[WebPush] Registration failed:", error);
+
+      if (errName === "NotAllowedError" || errMsg.includes("permission") || errMsg.includes("blocked")) {
+        toast.error("Notifications are blocked. Allow them in browser settings.");
+      } else if (errMsg.includes("not configured") || errMsg.includes("unavailable") || errMsg.includes("vapid")) {
+        toast.error("Push notifications are temporarily unavailable.");
+      } else if (errName === "AbortError" || errMsg.includes("push service error")) {
+        toast.error("Ghostline couldn't register this device for notifications. If using Brave, enable 'Google Services for push' in browser settings.");
+      } else if (errName === "InvalidAccessError" || errName === "InvalidCharacterError") {
+        toast.error("Ghostline encountered an invalid key format. Please try again.");
+      } else if (errMsg.includes("network") || errMsg.includes("fetch") || errMsg.includes("connect")) {
+        toast.error("Couldn't connect to the notification service. Please try again.");
+      } else if (errMsg.includes("service worker") || errMsg.includes("serviceworker")) {
+        toast.error("Ghostline couldn't start its notification service. Please reload and try again.");
+      } else {
+        toast.error(error.message || "Ghostline couldn't register this device for notifications. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -167,8 +232,8 @@ function WebPushToggle() {
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
           const endpoint = sub.endpoint;
-          await sub.unsubscribe();
-          await removeSub({ data: { endpoint } });
+          await sub.unsubscribe().catch(() => {});
+          await removeSub({ data: { endpoint } }).catch(() => {});
         }
       }
       setSubscribed(false);
@@ -344,7 +409,9 @@ function SettingsPage() {
   const signOut = async () => {
     await qc.cancelQueries();
     qc.clear();
+    rotateDeviceKey();
     await authService.signOut();
+    toast.success("Signed out successfully.");
     navigate({ to: "/auth", replace: true });
   };
 
@@ -360,6 +427,7 @@ function SettingsPage() {
 
         <Section title="Privacy & Security">
           <Row to="/devices" icon={Smartphone} label="Active devices" hint="Where you're signed in" />
+          <Row to="/change-password" icon={KeyRound} label="Change Password" hint="Update your Ghostline account password" />
           <Row to="/blocked" icon={ShieldBan} label="Blocked contacts" hint="People who can't reach you" />
           <div className="flex items-start gap-3 px-4 py-3.5">
             <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10">

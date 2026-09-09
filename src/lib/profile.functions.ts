@@ -48,3 +48,17 @@ export const checkUsernameAvailability = createServerFn({ method: "POST" })
     z.object({ username: z.string().trim().min(1).max(50) }).parse(data),
   )
   .handler(async ({ data, context }) => app(context).profiles.checkUsernameAvailability(data.username));
+
+export const heartbeatLastSeen = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z
+      .object({
+        lastSeen: z.string().datetime().optional(),
+      })
+      .optional()
+      .parse(data),
+  )
+  .handler(async ({ data, context }) =>
+    app(context).profiles.heartbeatLastSeen(data?.lastSeen),
+  );

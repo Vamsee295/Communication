@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { GroupInfoSheet, type GroupMember } from "@/components/group/group-info-sheet";
 import { UserProfileSheet } from "@/components/chat/user-profile-sheet";
+import { MessageBubble } from "@/components/chat/message-bubble";
 import {
   ArrowLeft,
   Send,
@@ -138,6 +139,7 @@ function ChatRoom() {
   const conv = useQuery({
     queryKey: ["conversation", conversationId],
     queryFn: () => fetchConv({ data: { conversation_id: conversationId } }),
+    staleTime: 30_000,
   });
 
   const messages = useQuery({
@@ -148,22 +150,24 @@ function ChatRoom() {
   const receipts = useQuery({
     queryKey: ["receipts", conversationId],
     queryFn: () => fetchReceipts({ data: { conversation_id: conversationId } }),
-    refetchInterval: 15000,
   });
 
   const reactions = useQuery({
     queryKey: ["reactions", conversationId],
     queryFn: () => fetchReactions({ data: { conversation_id: conversationId } }),
+    staleTime: 15_000,
   });
 
   const pins = useQuery({
     queryKey: ["pins", conversationId],
     queryFn: () => fetchPins({ data: { conversation_id: conversationId } }),
+    staleTime: 30_000,
   });
 
   const stars = useQuery({
     queryKey: ["stars-in-conv", conversationId],
     queryFn: () => fetchStarIds({ data: { conversation_id: conversationId } }),
+    staleTime: 30_000,
   });
 
   const [optimistic, setOptimistic] = useState<OptimisticMsg[]>([]);
@@ -423,18 +427,6 @@ function ChatRoom() {
     conversationId,
     disappearingMessagesEnabled: Boolean(conv.data?.conversation.disappearing_messages_enabled),
   });
-
-  const prevVanishActive = useRef(vanishActive);
-  useEffect(() => {
-    if (prevVanishActive.current !== vanishActive) {
-      if (vanishActive) {
-        import("sonner").then(m => m.toast("Disappearing messages enabled"));
-      } else {
-        import("sonner").then(m => m.toast("Disappearing messages disabled"));
-      }
-      prevVanishActive.current = vanishActive;
-    }
-  }, [vanishActive]);
   // ────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -455,7 +447,16 @@ function ChatRoom() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "conversations", filter: `id=eq.${conversationId}` },
-        () => {
+        (payload) => {
+          const newConv = payload.new as { disappearing_messages_enabled?: boolean } | undefined;
+          if (newConv && newConv.disappearing_messages_enabled === false) {
+            // Optimistically purge vanish messages immediately on remote disable
+            qc.setQueryData(["messages", conversationId], (old: any[] | undefined) => {
+              if (!old) return old;
+              return old.filter((m: any) => !m.is_vanish);
+            });
+            qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+          }
           qc.invalidateQueries({ queryKey: ["conversation", conversationId] });
         },
       )
@@ -475,12 +476,22 @@ function ChatRoom() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_receipts" },
-        () => qc.invalidateQueries({ queryKey: ["receipts", conversationId] }),
+        () => {
+          if (receiptsTimer) clearTimeout(receiptsTimer);
+          receiptsTimer = setTimeout(() => {
+            qc.invalidateQueries({ queryKey: ["receipts", conversationId] });
+          }, 150);
+        },
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
-        () => qc.invalidateQueries({ queryKey: ["reactions", conversationId] }),
+        () => {
+          if (reactionsTimer) clearTimeout(reactionsTimer);
+          reactionsTimer = setTimeout(() => {
+            qc.invalidateQueries({ queryKey: ["reactions", conversationId] });
+          }, 150);
+        },
       )
       .on(
         "postgres_changes",
@@ -536,8 +547,13 @@ function ChatRoom() {
         }
       });
 
+    let receiptsTimer: ReturnType<typeof setTimeout> | null = null;
+    let reactionsTimer: ReturnType<typeof setTimeout> | null = null;
+
     channelRef.current = channel;
     return () => {
+      if (receiptsTimer) clearTimeout(receiptsTimer);
+      if (reactionsTimer) clearTimeout(reactionsTimer);
       channelRef.current = null;
       setChannelReady(false);
       supabase.removeChannel(channel);
@@ -1280,120 +1296,63 @@ function ChatRoom() {
             const isSearchHit = searchHits[searchIdx] === m.id;
             const isFirstVanish = m.is_vanish && (!prev || !prev.is_vanish);
 
-            const renderMessage = () => {
-              if (m.is_vanish) {
-                return (
+            return (
+              <Fragment key={m.id}>
+                {isFirstVanish && (
+                  <li className="my-4 flex items-center justify-center gap-4 text-[11px] font-medium tracking-wide text-primary/70 uppercase select-none">
+                    <span className="h-px w-8 bg-primary/20" />
+                    <span className="flex items-center gap-1.5"><Moon className="h-3 w-3" /> Vanish Mode enabled</span>
+                    <span className="h-px w-8 bg-primary/20" />
+                  </li>
+                )}
+                {m.is_vanish ? (
                   <EphemeralMessageBubble
                     message={{ ...m, sender_name: conv.data?.members.find((mb) => mb.id === m.sender_id)?.display_name ?? "User" }}
                     mine={mine}
                     showName={conv.data?.conversation.kind === "group"}
                   />
-                );
-              }
-
-              return (
-                <li
-                  ref={(el) => {
-                    if (el) bubbleRefs.current.set(m.id, el);
-                    else bubbleRefs.current.delete(m.id);
-                  }}
-                  className={[
-                    "flex overflow-hidden transition-all duration-[260ms] ease-out",
-                    mine ? "justify-end" : "justify-start",
-                    grouped ? "mt-0" : "mt-2",
-                    removing ? "max-h-0 -translate-y-1 scale-95 opacity-0" : "max-h-none opacity-100",
-                    isSelected ? "bg-primary/10 rounded-xl" : "",
-                  ].join(" ")}
-                >
-                <div className={["flex max-w-[85%] flex-col gap-0.5", mine ? "items-end" : "items-start"].join(" ")}>
-                  <div
-                    onClick={() => selectMode && toggleSelect(m.id)}
-                    onContextMenu={(e) => openMenu(e, m)}
-                    {...longPress(m)}
-                    className={[
-                      "cursor-default select-none rounded-2xl px-3.5 py-2 text-sm leading-snug shadow",
-                      mine ? "bg-primary text-primary-foreground rounded-br-md" : "glass rounded-bl-md",
-                      (m as OptimisticMsg).pending ? "opacity-60" : "",
-                      (m as OptimisticMsg).failed ? "opacity-60 ring-1 ring-destructive" : "",
-                      isSearchHit ? "ring-2 ring-primary" : "",
-                    ].join(" ")}
-                  >
-                    {m.forwarded_from_id && (
-                      <p className={["mb-1 flex items-center gap-1 text-[10px] italic", mine ? "opacity-80" : "text-muted-foreground"].join(" ")}>
-                        <Forward className="h-2.5 w-2.5" /> Forwarded
-                      </p>
-                    )}
-                    {parent && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); scrollToMessage(parent.id); }}
-                        className={[
-                          "mb-1 block w-full rounded-lg border-l-2 px-2 py-1 text-left text-[11px]",
-                          mine ? "border-primary-foreground/60 bg-primary-foreground/10" : "border-primary bg-foreground/5",
-                        ].join(" ")}
-                      >
-                        <p className="line-clamp-2">{parent.body}</p>
-                      </button>
-                    )}
-                    <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                    <div className={["mt-0.5 flex items-center justify-end gap-1 text-[10px]", mine ? "opacity-70" : "text-muted-foreground"].join(" ")}>
-                      {isPinned && <Pin className="h-2.5 w-2.5" />}
-                      {isStarred && <Star className="h-2.5 w-2.5 fill-current" />}
-                      {m.edited_at && <span className="italic">edited</span>}
-                      <span>
-                        {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      {mine && (
-                        (m as OptimisticMsg).pending ? (
-                          <span>…</span>
-                        ) : receipt?.read_at ? (
-                          <CheckCheck className="h-3 w-3" />
-                        ) : receipt?.delivered_at ? (
-                          <Check className="h-3 w-3" />
-                        ) : (
-                          <Check className="h-3 w-3 opacity-50" />
-                        )
-                      )}
-                    </div>
-                  </div>
-                  {rlist.length > 0 && (
-                    <div className={["flex flex-wrap gap-1", mine ? "justify-end" : "justify-start"].join(" ")}>
-                      {rlist.map((r) => (
-                        <button
-                          key={r.emoji}
-                          onClick={async () => {
-                            await doReact({ data: { message_id: m.id, emoji: r.emoji } });
-                            qc.invalidateQueries({ queryKey: ["reactions", conversationId] });
-                          }}
-                          className={[
-                            "glass flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px]",
-                            r.mine ? "ring-1 ring-primary" : "",
-                          ].join(" ")}
-                        >
-                          <span>{r.emoji}</span>
-                          <span className="text-muted-foreground">{r.count}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </li>
+                ) : (
+                  <MessageBubble
+                    id={m.id}
+                    body={m.body}
+                    sender_id={m.sender_id}
+                    created_at={m.created_at}
+                    edited_at={m.edited_at}
+                    forwarded_from_id={m.forwarded_from_id}
+                    reply_to_id={m.reply_to_id}
+                    mine={mine}
+                    grouped={Boolean(grouped)}
+                    removing={removing}
+                    isSelected={isSelected}
+                    selectMode={selectMode}
+                    isPinned={isPinned}
+                    isStarred={isStarred}
+                    isSearchHit={isSearchHit}
+                    pending={(m as OptimisticMsg).pending}
+                    failed={(m as OptimisticMsg).failed}
+                    receipt={receipt}
+                    reactions={rlist}
+                    parent={parent ? { id: parent.id, body: parent.body } : null}
+                    onToggleSelect={toggleSelect}
+                    onOpenMenu={(e, msgId) => {
+                      const msg = messageById.get(msgId) ?? m;
+                      openMenu(e as React.MouseEvent, msg);
+                    }}
+                    onScrollToParent={scrollToMessage}
+                    onReact={async (msgId, emoji) => {
+                      await doReact({ data: { message_id: msgId, emoji } });
+                      qc.invalidateQueries({ queryKey: ["reactions", conversationId] });
+                    }}
+                    bubbleRef={(el) => {
+                      if (el) bubbleRefs.current.set(m.id, el);
+                      else bubbleRefs.current.delete(m.id);
+                    }}
+                    longPressProps={longPress(m)}
+                  />
+                )}
+              </Fragment>
             );
-          };
-
-          return (
-            <Fragment key={m.id}>
-              {isFirstVanish && (
-                <li className="my-4 flex items-center justify-center gap-4 text-[11px] font-medium tracking-wide text-primary/70 uppercase select-none">
-                  <span className="h-px w-8 bg-primary/20" />
-                  <span className="flex items-center gap-1.5"><Moon className="h-3 w-3" /> Vanish Mode enabled</span>
-                  <span className="h-px w-8 bg-primary/20" />
-                </li>
-              )}
-              {renderMessage()}
-            </Fragment>
-          );
-        })}
+          })}
           {typingOther && (
             <li className="flex justify-start">
               <div className="glass flex items-center gap-1 rounded-2xl rounded-bl-md px-3 py-2">

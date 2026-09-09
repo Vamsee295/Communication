@@ -45,7 +45,7 @@ export const Route = createFileRoute("/_authenticated")({
       void validateDeviceSession({ data: { device_key: deviceKey } })
         .then(async (validation) => {
           if (validation && !validation.valid && validation.reason === "revoked") {
-            await handleSessionRevocation("Your Ghostline session was signed out from another device.");
+            await handleSessionRevocation();
           }
         })
         .catch(() => {});

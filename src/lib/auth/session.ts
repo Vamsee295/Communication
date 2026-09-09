@@ -81,6 +81,49 @@ export async function resendVerificationEmail(email: string, emailRedirectTo: st
   return supabase.auth.resend({ type: "signup", email, options: { emailRedirectTo } });
 }
 
+export async function resetPasswordForEmail(email: string, redirectTo: string) {
+  return supabase.auth.resetPasswordForEmail(email, { redirectTo });
+}
+
+export async function updateUserPassword(password: string) {
+  return supabase.auth.updateUser({ password });
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  if (isDevAuthActive()) {
+    if (currentPassword === newPassword) {
+      return { error: { message: "New password must be different from current password." } };
+    }
+    return { data: { user: DEV_USER }, error: null };
+  }
+
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session?.user?.email) {
+    return { error: { message: "No active authenticated session found. Please sign in again." } };
+  }
+
+  // 1. Verify the current password against Supabase Auth
+  const { error: verifyError } = await supabase.auth.signInWithPassword({
+    email: session.user.email,
+    password: currentPassword,
+  });
+
+  if (verifyError) {
+    return { error: { message: "Current password is incorrect." } };
+  }
+
+  // 2. Commit the new password to Supabase Auth
+  const { data, error: updateError } = await supabase.auth.updateUser({
+    password: newPassword,
+  });
+
+  if (updateError) {
+    return { error: updateError };
+  }
+
+  return { data, error: null };
+}
+
 import { isDevAuthBypassEnabled, setDevAuthActive, getDevSession, DEV_USER, notifyDevAuthChange } from "./dev-auth";
 
 export { isDevAuthBypassEnabled };
@@ -104,6 +147,10 @@ export const authService = {
   signInWithGoogle,
   signInWithGithub,
   resendVerificationEmail,
+  resetPasswordForEmail,
+  updateUserPassword,
+  changePassword,
   isDevAuthBypassEnabled,
   signInWithDevBypass,
 };
+

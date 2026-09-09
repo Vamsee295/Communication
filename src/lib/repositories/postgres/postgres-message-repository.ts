@@ -204,6 +204,27 @@ export class PostgresMessageRepository implements MessageRepository {
     return parseInt(rows[0]?.count ?? "0", 10);
   }
 
+  async countUnreadBatch(conversationIds: string[], userId: string): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (conversationIds.length === 0) return result;
+
+    const rows = await this.db<{ conversation_id: string; count: string }[]>`
+      SELECT m.conversation_id, COUNT(*)::text as count
+        FROM public.messages m
+        JOIN public.conversation_members cm
+          ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}
+       WHERE m.conversation_id = ANY(${conversationIds})
+         AND m.sender_id <> ${userId}
+         AND m.created_at > COALESCE(cm.last_read_at, '1970-01-01'::timestamptz)
+       GROUP BY m.conversation_id;
+    `;
+
+    for (const r of rows) {
+      result.set(r.conversation_id, parseInt(r.count ?? "0", 10));
+    }
+    return result;
+  }
+
   async listIds(
     conversationId: string,
     opts: { limit: number; senderId?: string; createdAtLte?: string },

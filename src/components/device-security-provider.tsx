@@ -31,11 +31,8 @@ export function DeviceSecurityProvider({ children }: { children: React.ReactNode
           await handleSessionRevocation(DEFAULT_REVOCATION_REASON);
         }
       } catch (err: unknown) {
-        const msg = (err as Error)?.message || "";
-        if (msg.includes("revoked") || msg.includes("Unauthorized")) {
-          console.warn("[Security] Device validation error:", msg);
-          await handleSessionRevocation(DEFAULT_REVOCATION_REASON);
-        }
+        // Network, server, or unauthenticated errors must not trigger device revocation
+        console.warn("[Security] Device validation check skipped:", err);
       }
     };
 

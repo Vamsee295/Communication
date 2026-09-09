@@ -35,6 +35,7 @@ export type ProfilePatch = {
 export interface ProfileRepository {
   getById(id: string): Promise<Profile | null>;
   update(id: string, patch: ProfilePatch): Promise<Profile>;
+  updateLastSeen(id: string, lastSeen?: string): Promise<void>;
   search(query: string, excludeId: string): Promise<FriendProfile[]>;
   getChatProfiles(ids: string[]): Promise<ChatProfile[]>;
   getCallPeer(id: string): Promise<CallPeer | null>;
@@ -142,6 +143,7 @@ export interface MessageRepository {
   listRecentPreview(conversationIds: string[], limit: number): Promise<Message[]>;
   lastFromOthers(conversationId: string, excludeUserId: string): Promise<{ created_at: string } | null>;
   countUnread(conversationId: string, userId: string, since: string): Promise<number>;
+  countUnreadBatch?(conversationIds: string[], userId: string): Promise<Map<string, number>>;
   listIds(conversationId: string, opts: { limit: number; senderId?: string; createdAtLte?: string }): Promise<string[]>;
   listIdsCreatedAtLte(conversationId: string, createdAtLte: string): Promise<string[]>;
   listEdits(messageId: string): Promise<MessageEdit[]>;

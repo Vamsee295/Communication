@@ -24,4 +24,9 @@ export class ProfileService {
   checkUsernameAvailability(username: string): Promise<boolean> {
     return this.profiles.checkUsernameAvailability(username);
   }
+
+  async heartbeatLastSeen(lastSeen?: string): Promise<{ ok: true }> {
+    await this.profiles.updateLastSeen(this.userId, lastSeen);
+    return { ok: true };
+  }
 }

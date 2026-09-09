@@ -233,7 +233,7 @@ async function cleanupVanishMessages() {
 export const listConversations = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<ConversationSummary[]> => {
-    await cleanupVanishMessages();
+    void cleanupVanishMessages();
     return app(context).conversations.list();
   });
 
@@ -241,7 +241,7 @@ export const getConversation = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => {
-    await cleanupVanishMessages();
+    void cleanupVanishMessages();
     return app(context).conversations.get(data.conversation_id);
   });
 

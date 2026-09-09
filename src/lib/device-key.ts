@@ -7,17 +7,30 @@ export function getDeviceKey(userId?: string): string {
   if (!key) {
     key = crypto.randomUUID();
     localStorage.setItem(actualKey, key);
+    if (!userId) {
+      localStorage.setItem(KEY, key);
+    }
   }
   return key;
 }
 
 export function rotateDeviceKey(userId?: string): string {
   if (typeof window === "undefined") return "ssr";
-  const actualKey = userId ? `${KEY}.${userId}` : KEY;
   const newKey = crypto.randomUUID();
-  localStorage.setItem(actualKey, newKey);
-  // Also rotate base key if userId was provided
   if (userId) {
+    localStorage.setItem(`${KEY}.${userId}`, newKey);
+    localStorage.setItem(KEY, newKey);
+  } else {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(KEY)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {
+      // ignore
+    }
     localStorage.setItem(KEY, newKey);
   }
   return newKey;
@@ -25,10 +38,20 @@ export function rotateDeviceKey(userId?: string): string {
 
 export function clearDeviceKey(userId?: string): void {
   if (typeof window === "undefined") return;
-  const actualKey = userId ? `${KEY}.${userId}` : KEY;
-  localStorage.removeItem(actualKey);
   if (userId) {
+    localStorage.removeItem(`${KEY}.${userId}`);
     localStorage.removeItem(KEY);
+  } else {
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(KEY)) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 }
 
@@ -43,3 +66,4 @@ export function guessDeviceName(): string {
   if (/Linux/i.test(ua)) return "Linux";
   return "Web browser";
 }
+

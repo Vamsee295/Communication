@@ -51,6 +51,15 @@ export class PostgresProfileRepository implements ProfileRepository {
     return rows[0];
   }
 
+  async updateLastSeen(id: string, lastSeen?: string): Promise<void> {
+    const timestamp = lastSeen ?? new Date().toISOString();
+    await this.db`
+      UPDATE public.profiles
+         SET last_seen = GREATEST(COALESCE(last_seen, '1970-01-01'::timestamptz), ${timestamp}::timestamptz)
+       WHERE id = ${id};
+    `;
+  }
+
   async search(query: string, excludeId: string): Promise<FriendProfile[]> {
     // Normalize query by removing leading @ and trimming
     const normalizedQuery = query.replace(/^@/, '').trim();

@@ -67,6 +67,7 @@ export class MessageService {
     client_id?: string;
     reply_to_id?: string | null;
     forwarded_from_id?: string | null;
+    is_vanish?: boolean;
   }): Promise<Message> {
     await this.rateLimiter.hit("messages.send", this.userId);
 
@@ -75,9 +76,13 @@ export class MessageService {
       await this.conversationPolicy.requireMembership(this.userId, input.conversation_id);
     }
 
-    // 2. Check group permissions if it's a group
+    // 2. Fetch conversation metadata for permissions & vanish mode state
+    let isVanish = Boolean(input.is_vanish);
     if (this.conversations?.getById) {
       const conv = await this.conversations.getById(input.conversation_id);
+      if (conv?.disappearing_messages_enabled) {
+        isVanish = true;
+      }
       if (conv?.kind === "group") {
         const members = (await this.conversations.listMembers([input.conversation_id])) ?? [];
         const me = members.find((m) => m.user_id === this.userId);
@@ -92,7 +97,7 @@ export class MessageService {
       }
     }
 
-    // 2. If replying, verify parent message belongs to the same conversation
+    // 3. If replying, verify parent message belongs to the same conversation
     if (input.reply_to_id) {
       if (this.messagePolicy) {
         await this.messagePolicy.requireReplyValid(input.conversation_id, input.reply_to_id);
@@ -104,7 +109,7 @@ export class MessageService {
       }
     }
 
-    // 3. If forwarding, verify caller has access to the forwarded message
+    // 4. If forwarding, verify caller has access to the forwarded message
     if (input.forwarded_from_id && this.messagePolicy) {
       await this.messagePolicy.requireAccess(this.userId, input.forwarded_from_id);
     }
@@ -116,6 +121,7 @@ export class MessageService {
       client_id: input.client_id ?? null,
       reply_to_id: input.reply_to_id ?? null,
       forwarded_from_id: input.forwarded_from_id ?? null,
+      is_vanish: isVanish,
     });
   }
 

@@ -27,6 +27,15 @@ export class SupabaseProfileRepository implements ProfileRepository {
     return data as Profile;
   }
 
+  async updateLastSeen(id: string, lastSeen?: string): Promise<void> {
+    const timestamp = lastSeen ?? new Date().toISOString();
+    const { error } = await this.supabase
+      .from("profiles")
+      .update({ last_seen: timestamp })
+      .eq("id", id);
+    if (error) mapInfraError(error);
+  }
+
   async search(query: string, excludeId: string): Promise<FriendProfile[]> {
     const q = query.toLowerCase().replace(/[%_]/g, "\\$&");
     const { data, error } = await this.supabase

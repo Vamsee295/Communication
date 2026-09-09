@@ -53,10 +53,10 @@ export class PushDispatcher implements PostCommitConsumer {
 
       // Fetch metadata
       const senderRows = await sql<{ display_name: string }[]>`SELECT display_name FROM public.user_profiles WHERE id = ${senderId}`;
-      const senderName = senderRows[0]?.display_name || "Someone";
+      const senderName = senderRows?.[0]?.display_name || "Someone";
 
       const convRows = await sql<{ kind: string; title: string | null }[]>`SELECT kind, title FROM public.conversations WHERE id = ${conversation_id}`;
-      const groupName = convRows[0]?.kind === "group" ? convRows[0]?.title || undefined : undefined;
+      const groupName = convRows?.[0]?.kind === "group" ? convRows?.[0]?.title || undefined : undefined;
 
       // 2. Fetch push subscriptions for active members
       const subscriptions = await sql<StoredPushSubscription[]>`

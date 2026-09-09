@@ -392,13 +392,18 @@ export class ConversationService {
       flagsByConv.set(m.conversation_id, m);
     }
 
-    const unreadByConv = new Map<string, number>();
-    await Promise.all(
-      convIds.map(async (cid) => {
-        const since = flagsByConv.get(cid)?.last_read_at ?? "1970-01-01";
-        unreadByConv.set(cid, await this.messages.countUnread(cid, this.userId, since));
-      }),
-    );
+    let unreadByConv: Map<string, number>;
+    if (this.messages.countUnreadBatch) {
+      unreadByConv = await this.messages.countUnreadBatch(convIds, this.userId);
+    } else {
+      unreadByConv = new Map<string, number>();
+      await Promise.all(
+        convIds.map(async (cid) => {
+          const since = flagsByConv.get(cid)?.last_read_at ?? "1970-01-01";
+          unreadByConv.set(cid, await this.messages.countUnread(cid, this.userId, since));
+        }),
+      );
+    }
 
     const summaries: ConversationSummary[] = convs.map((c) => {
       const members = membersByConv.get(c.id) ?? [];
@@ -541,8 +546,15 @@ export class ConversationService {
     if (this.conversationPolicy) {
       await this.conversationPolicy.requireMembership(this.userId, conversationId);
     }
+    const members = await this.conversations.listMembers([conversationId]);
+    const me = members.find((m) => m.user_id === this.userId);
+    if (!me) throw new AuthorizationError("Not a member of this conversation");
+
     if (this.conversations.setDisappearingMessages) {
       await this.conversations.setDisappearingMessages(conversationId, enabled);
+    }
+    if (!enabled && this.messages?.deleteVanishMessages) {
+      await this.messages.deleteVanishMessages(conversationId);
     }
     return { ok: true };
   }

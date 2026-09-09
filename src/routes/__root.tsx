@@ -17,6 +17,7 @@ import { authService } from "@/lib/auth/session";
 import { PresenceProvider } from "@/components/presence-provider";
 import { CallProvider } from "@/components/calls/call-provider";
 import { DeviceSecurityProvider } from "@/components/device-security-provider";
+import { StartupSplash } from "@/components/startup-splash";
 
 function NotFoundComponent() {
   return (
@@ -81,7 +82,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "Ghostline — Private Chats. Real Connections." },
       { property: "og:description", content: "Private messaging with peer-to-peer voice and video calls. Nothing recorded, nothing sold." },
       { property: "og:type", content: "website" },
+      { property: "og:image", content: "/og-image.png" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:image", content: "/og-image.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -92,6 +95,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon-32x32.png", type: "image/png", sizes: "32x32" },
+      { rel: "icon", href: "/favicon-16x16.png", type: "image/png", sizes: "16x16" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
       { rel: "manifest", href: "/manifest.webmanifest" },
     ],
 
@@ -109,6 +115,27 @@ function RootShell({ children }: { children: ReactNode }) {
         <HeadContent />
       </head>
       <body>
+        <div id="ghostline-boot-splash" className="ghostline-splash-screen" aria-hidden="true">
+          <div className="ghostline-splash-container">
+            <div className="ghostline-splash-badge">
+              <svg viewBox="0 0 24 24" className="ghostline-splash-icon" fill="none" aria-hidden="true">
+                <path
+                  d="M4 11a8 8 0 1 1 16 0v8.2c0 .9-1 1.4-1.7.9l-1.6-1.2a1.2 1.2 0 0 0-1.5.05l-1.1.9a1.2 1.2 0 0 1-1.6-.03l-1-.9a1.2 1.2 0 0 0-1.5-.04L8.2 20c-.7.5-1.7 0-1.7-.9V11Z"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinejoin="round"
+                />
+                <path d="M9.5 10.5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M9.5 13.8h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <h1 className="ghostline-splash-title">Ghostline</h1>
+            <p className="ghostline-splash-subtitle">Private Chats. Real Connections.</p>
+            <div className="ghostline-splash-loader">
+              <div className="ghostline-splash-loader-bar" />
+            </div>
+          </div>
+        </div>
         {children}
         <Scripts />
       </body>
@@ -130,13 +157,16 @@ function RootComponent() {
     const { data: sub } = authService.onAuthStateChange((event) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") {
+        queryClient.invalidateQueries({ queryKey: ["me"] });
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, [queryClient, router]);
 
   return (
     <QueryClientProvider client={queryClient}>
+      <StartupSplash />
       <ThemeBootstrap />
       <DeviceSecurityProvider>
         <PresenceProvider>

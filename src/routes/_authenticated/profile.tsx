@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { getMyProfile, updateProfile } from "@/lib/profile.functions";
 import { authService } from "@/lib/auth/session";
+import { rotateDeviceKey } from "@/lib/device-key";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -53,9 +54,11 @@ function ProfilePage() {
   });
 
   const signOut = async () => {
+    rotateDeviceKey();
     await qc.cancelQueries();
     qc.clear();
     await authService.signOut();
+    toast.success("Signed out successfully.");
     navigate({ to: "/auth", replace: true });
   };
 
