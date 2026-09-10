@@ -44,11 +44,19 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+import { handleAttachmentApiRequest } from "./lib/attachments.api";
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const url = new URL(request.url);
+      if (url.pathname.startsWith("/api/attachments/")) {
+        return await handleAttachmentApiRequest(request);
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
+
       return await normalizeCatastrophicSsrResponse(response);
     } catch (error) {
       console.error(error);

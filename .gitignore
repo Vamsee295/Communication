@@ -44,3 +44,5 @@ scratch/
 *.pem
 *.key
 credentials.json
+
+*.android-log.txt

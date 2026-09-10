@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS public.attachments (
   original_filename TEXT NOT NULL,
   mime_type TEXT NOT NULL,
   file_size BIGINT NOT NULL CHECK (file_size > 0),
+  file_data BYTEA,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'uploaded', 'attached', 'failed')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

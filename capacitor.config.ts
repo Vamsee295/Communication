@@ -1,9 +1,16 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
+const DEFAULT_SERVER_URL = 'https://communication-gff0np6a7-vamsees-projects-4fddfad4.vercel.app';
+const serverUrl = process.env.CAPACITOR_SERVER_URL || DEFAULT_SERVER_URL;
+
 const config: CapacitorConfig = {
   appId: 'com.ghostline.app',
   appName: 'Ghostline',
-  webDir: 'dist',
+  webDir: 'public',
+  server: {
+    url: serverUrl,
+    androidScheme: 'https',
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 2000,

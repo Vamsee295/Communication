@@ -6,6 +6,13 @@ import { toast } from "sonner";
 import { GroupInfoSheet, type GroupMember } from "@/components/group/group-info-sheet";
 import { UserProfileSheet } from "@/components/chat/user-profile-sheet";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import { PinnedMessagesPanel } from "@/components/chat/pinned-messages-panel";
+import { AttachmentActionMenu } from "@/components/chat/attachment-action-menu";
+import { VoiceRecorder } from "@/components/chat/voice-recorder";
+import { CameraCaptureModal } from "@/components/chat/camera-capture-modal";
+import { MediaPreviewBar, type StagedFile } from "@/components/chat/media-preview-bar";
+import { MediaViewerModal } from "@/components/chat/media-viewer-modal";
+import { EmojiPickerPopover } from "@/components/chat/emoji-picker-popover";
 import {
   ArrowLeft,
   Send,
@@ -41,7 +48,18 @@ import {
   Archive,
   ArchiveRestore,
   ShieldBan,
+  Mic,
+  Plus,
+  Paperclip,
+  FileText,
+  Download,
+  Image as ImageIcon,
 } from "lucide-react";
+import {
+  downloadAuthenticatedAttachment,
+  copyImageToClipboard,
+  getAuthenticatedAttachment,
+} from "@/lib/authenticated-media";
 import {
   getConversation,
   listMessages,
@@ -72,6 +90,10 @@ import {
   toggleDisappearingMessages,
   setConversationFlags,
   blockContact,
+  startAttachmentUpload,
+  confirmAttachmentUpload,
+  getAttachmentAccessUrl,
+  sendAttachmentMessage,
   type MessageRow,
   type ChatProfile,
   type ConversationSummary,
@@ -84,7 +106,6 @@ import { useKeyboardInset } from "@/hooks/use-keyboard-inset";
 import { usePresence } from "@/components/presence-provider";
 import { useCalls } from "@/components/calls/call-provider";
 import { useVanishMode } from "@/hooks/use-vanish-mode";
-
 import { EphemeralMessageBubble } from "@/components/chat/ephemeral-message-bubble";
 
 export const Route = createFileRoute("/_authenticated/chats/$conversationId")({
@@ -126,6 +147,10 @@ function ChatRoom() {
   const doFlags = useServerFn(setConversationFlags);
   const doLeave = useServerFn(leaveConversation);
   const doFinalizeVanishSession = useServerFn(finalizeVanishSession);
+  const doStartAttachmentUpload = useServerFn(startAttachmentUpload);
+  const doConfirmAttachmentUpload = useServerFn(confirmAttachmentUpload);
+  const doGetAttachmentAccessUrl = useServerFn(getAttachmentAccessUrl);
+  const doSendAttachmentMessage = useServerFn(sendAttachmentMessage);
 
   const me = useQuery({ queryKey: ["me"], queryFn: () => fetchProfile() });
 
@@ -194,6 +219,19 @@ function ChatRoom() {
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"clear" | "block" | "leave" | null>(null);
+
+  // ── Attachment / media state ──────────────────────────────────────────────
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
+  const [attachCaption, setAttachCaption] = useState("");
+  const [isSendingAttachment, setIsSendingAttachment] = useState(false);
+  const [mediaViewer, setMediaViewer] = useState<{ messageId: string; index: number } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // ── Pin panel state ───────────────────────────────────────────────────────
+  const [activePinIndex, setActivePinIndex] = useState(0);
+  const [pinPanelOpen, setPinPanelOpen] = useState(false);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const keyboardInset = useKeyboardInset();
@@ -650,6 +688,7 @@ function ChatRoom() {
   }, [channelReady, meId]);
 
   const [text, setText] = useState("");
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
     if (editing) {
@@ -664,6 +703,19 @@ function ChatRoom() {
   }, [text]);
 
 
+  // Auto-send voice messages the moment they are staged by VoiceRecorder
+  useEffect(() => {
+    if (
+      stagedFiles.length === 1 &&
+      stagedFiles[0].file.name.startsWith("voice_") &&
+      stagedFiles[0].progress === 0 &&
+      !isSendingAttachment
+    ) {
+      uploadAndSendAttachments();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stagedFiles]);
+
   const submit = () => {
     const body = text.trim();
     if (!body) return;
@@ -676,6 +728,7 @@ function ChatRoom() {
     setText("");
     send.mutate(body);
   };
+
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -700,20 +753,132 @@ function ChatRoom() {
     }
   };
 
-  const scrollToMessage = (id: string) => {
-    const el = bubbleRefs.current.get(id);
-    if (!el) {
-      showToast("Message not in view — scroll up");
-      return;
-    }
+  const highlightBubble = (el: HTMLLIElement) => {
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     el.animate(
       [
-        { boxShadow: "0 0 0 3px oklch(0.92 0.19 100 / 0.6)" },
+        { boxShadow: "0 0 0 3px oklch(0.72 0.19 240 / 0.55)" },
         { boxShadow: "0 0 0 0 transparent" },
       ],
-      { duration: 1400, easing: "ease-out" },
+      { duration: 1600, easing: "ease-out" },
     );
+  };
+
+  const scrollToMessage = useCallback(async (id: string) => {
+    // 1. Already in DOM — instant
+    const el = bubbleRefs.current.get(id);
+    if (el) { highlightBubble(el); return; }
+
+    // 2. Not in DOM — fetch the message, merge into query cache, then highlight
+    try {
+      const fetched = await fetchMsgsByIds({ data: { ids: [id] } });
+      if (fetched.length === 0) { showToast("Message not found"); return; }
+      // Merge fetched message into the existing message list cache
+      qc.setQueryData<MessageRow[]>(["messages", conversationId], (old) => {
+        if (!old) return fetched;
+        if (old.some((m) => m.id === id)) return old;
+        return [...old, ...fetched].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+      });
+      // Wait a frame for the DOM to update, then highlight
+      requestAnimationFrame(() => {
+        const rendered = bubbleRefs.current.get(id);
+        if (rendered) highlightBubble(rendered);
+        else showToast("Scroll up to see message");
+      });
+    } catch {
+      showToast("Message not in view — scroll up");
+    }
+  }, [conversationId, fetchMsgsByIds, qc]);
+
+  const stageFiles = (files: File[]) => {
+    const newStaged: StagedFile[] = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      progress: 0,
+    }));
+    setStagedFiles((prev) => [...prev, ...newStaged]);
+  };
+
+  const uploadAndSendAttachments = async () => {
+    if (stagedFiles.length === 0) return;
+    setIsSendingAttachment(true);
+    try {
+      const attachmentIds: string[] = [];
+      for (const sf of stagedFiles) {
+        try {
+          const { attachment, upload_url } = await doStartAttachmentUpload({
+            data: {
+              conversation_id: conversationId,
+              filename: sf.file.name,
+              mime_type: sf.file.type || "application/octet-stream",
+              file_size: sf.file.size,
+            },
+          });
+          const attachment_id = attachment.id;
+
+
+          // 2. Upload directly to R2 or Neon fallback
+          setStagedFiles((prev) =>
+            prev.map((s) => (s.id === sf.id ? { ...s, progress: 0.1 } : s)),
+          );
+          
+          const uploadTarget = upload_url === "neon" ? `/api/attachments/${attachment_id}` : upload_url;
+          const session = (await supabase.auth.getSession()).data.session;
+          const uploadHeaders: Record<string, string> = {};
+          if (upload_url === "neon" && session?.access_token) {
+            uploadHeaders["Authorization"] = `Bearer ${session.access_token}`;
+          } else if (upload_url !== "neon") {
+            uploadHeaders["Content-Type"] = sf.file.type || "application/octet-stream";
+          }
+
+          const res = await fetch(uploadTarget, {
+            method: "PUT",
+            body: sf.file,
+            headers: uploadHeaders,
+          });
+          if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+          setStagedFiles((prev) =>
+            prev.map((s) => (s.id === sf.id ? { ...s, progress: 0.9 } : s)),
+          );
+
+          // 3. Confirm upload
+          await doConfirmAttachmentUpload({ data: { attachment_id } });
+          setStagedFiles((prev) =>
+            prev.map((s) => (s.id === sf.id ? { ...s, progress: 1, attachmentId: attachment_id } : s)),
+          );
+          attachmentIds.push(attachment_id);
+        } catch (err) {
+          setStagedFiles((prev) =>
+            prev.map((s) => (s.id === sf.id ? { ...s, error: "Upload failed" } : s)),
+          );
+          console.error("[Ghostline] Attachment upload error:", err);
+        }
+      }
+
+      if (attachmentIds.length === 0) {
+        showToast("Upload failed — please try again");
+        return;
+      }
+
+      // 4. Send message with attachment IDs + optional caption
+      const msg = await doSendAttachmentMessage({
+        data: {
+          conversation_id: conversationId,
+          body: attachCaption.trim(),
+          attachment_ids: attachmentIds,
+        },
+      });
+      qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+      setStagedFiles([]);
+      setAttachCaption("");
+    } catch (err) {
+      console.error("[Ghostline] sendAttachmentMessage error:", err);
+      showToast("Failed to send — please try again");
+    } finally {
+      setIsSendingAttachment(false);
+    }
   };
 
   const openMenu = (e: React.MouseEvent, m: MessageRow) => {
@@ -1202,27 +1367,26 @@ function ChatRoom() {
         </div>
       )}
 
-      {pinnedMessages.length > 0 && !pinsCollapsed && (
-        <button
-          onClick={() => scrollToMessage(pinnedMessages[0].id)}
-          className="glass sticky top-[68px] z-20 flex w-full items-center gap-2 border-b border-border px-4 py-2 text-left"
-        >
-          <Pin className="h-4 w-4 text-primary" />
-          <div className="min-w-0 flex-1">
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
-              Pinned · {pinnedMessages.length}
-            </p>
-            <p className="truncate text-xs">{pinnedMessages[0].body}</p>
-          </div>
-          <span
-            onClick={(e) => { e.stopPropagation(); setPinsCollapsed(true); }}
-            className="grid h-7 w-7 cursor-pointer place-items-center rounded-full hover:bg-foreground/10"
-            aria-label="Hide pins"
-          >
-            <X className="h-3.5 w-3.5" />
-          </span>
-        </button>
+      {(pins.data?.pins ?? []).length > 0 && !pinsCollapsed && (
+        <PinnedMessagesPanel
+          pins={pins.data?.pins ?? []}
+          messages={pins.data?.messages ?? []}
+          activePinIndex={activePinIndex}
+          onSetActiveIndex={setActivePinIndex}
+          onJump={(id) => scrollToMessage(id)}
+          onUnpin={async (messageId) => {
+            await doUnpin({ data: { conversation_id: conversationId, message_id: messageId } });
+            qc.invalidateQueries({ queryKey: ["pins", conversationId] });
+            const newLen = (pins.data?.pins ?? []).length - 1;
+            if (newLen === 0) { setPinsCollapsed(true); setPinPanelOpen(false); }
+            else setActivePinIndex((prev) => Math.min(prev, newLen - 1));
+          }}
+          onCollapse={() => { setPinsCollapsed(true); setPinPanelOpen(false); }}
+          onOpenPanel={() => setPinPanelOpen((v) => !v)}
+          isPanelOpen={pinPanelOpen}
+        />
       )}
+
 
       {selectMode && (
         <div className="glass sticky top-[68px] z-20 flex items-center gap-2 border-b border-border px-3 py-2">
@@ -1333,6 +1497,12 @@ function ChatRoom() {
                     receipt={receipt}
                     reactions={rlist}
                     parent={parent ? { id: parent.id, body: parent.body } : null}
+                    attachments={m.attachments}
+                    onImageClick={(attachmentId) => {
+                      if (!m.attachments) return;
+                      const idx = m.attachments.findIndex((a) => a.id === attachmentId);
+                      if (idx !== -1) setMediaViewer({ messageId: m.id, index: idx });
+                    }}
                     onToggleSelect={toggleSelect}
                     onOpenMenu={(e, msgId) => {
                       const msg = messageById.get(msgId) ?? m;
@@ -1366,9 +1536,34 @@ function ChatRoom() {
       </div>
 
       <form
-        onSubmit={(e) => { e.preventDefault(); submit(); }}
-        className="sticky bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur"
+        onSubmit={(e) => { e.preventDefault(); stagedFiles.length > 0 ? uploadAndSendAttachments() : submit(); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer.types.includes("Files")) setIsDraggingOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOver(false);
+          const files = Array.from(e.dataTransfer.files);
+          if (files.length > 0) {
+            stageFiles(files);
+            showToast(`${files.length} file${files.length > 1 ? "s" : ""} added`);
+          }
+        }}
+        className="sticky bottom-0 z-20 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur relative"
       >
+        {isDraggingOver && (
+          <div className="pointer-events-none absolute inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] top-2 z-30 flex items-center justify-center rounded-3xl bg-primary/15 backdrop-blur-sm border-2 border-dashed border-primary animate-fade-in">
+            <p className="text-sm font-semibold text-primary">Drop files here to send</p>
+          </div>
+        )}
         <div className="mx-auto max-w-md">
           {!vanishActive && (replyTo || editing) && (
             <div className="glass mb-1.5 flex items-center gap-2 rounded-2xl border-l-2 border-primary px-3 py-2">
@@ -1388,47 +1583,142 @@ function ChatRoom() {
               </button>
             </div>
           )}
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={composerRef}
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                if (!vanishActive) notifyTyping();
-                const el = e.currentTarget;
-                el.style.height = "auto";
-                el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
-              }}
-              onFocus={() => {
-                setTimeout(() => {
-                  scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
-                }, 250);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
-              }}
-              rows={1}
-              placeholder={vanishActive ? "Vanish message..." : editing ? "Edit message" : "Message"}
-              className={[
-                "max-h-32 min-h-11 flex-1 resize-none rounded-3xl px-4 py-3 text-sm outline-none transition-colors",
-                "glass",
-              ].join(" ")}
-              aria-label={vanishActive ? "Type a vanish message" : "Type a message"}
+          {/* Staged media preview bar */}
+          {stagedFiles.length > 0 && (
+            <MediaPreviewBar
+              stagedFiles={stagedFiles}
+              caption={attachCaption}
+              onCaptionChange={setAttachCaption}
+              onRemove={(id) => setStagedFiles((prev) => prev.filter((s) => s.id !== id))}
             />
-            <button
-              type="submit"
-              disabled={!text.trim() || (!vanishActive && (send.isPending || commitEdit.isPending))}
-              className={[
-                "grid h-11 w-11 place-items-center rounded-full text-primary-foreground transition disabled:opacity-40",
-                "bg-primary glow-primary",
-              ].join(" ")}
-              aria-label={editing ? "Save" : vanishActive ? "Send vanish message" : "Send"}
-            >
-              {vanishActive ? <Moon className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-            </button>
-          </div>
+          )}
+
+          {/* Voice recorder mode */}
+          {showVoiceRecorder ? (
+            <VoiceRecorder
+              onSend={async (blob, mimeType) => {
+                const ext = mimeType.split(";")[0].split("/")[1] ?? "webm";
+                const file = new File([blob], `voice_${Date.now()}.${ext}`, { type: mimeType.split(";")[0] });
+                setStagedFiles([{ id: crypto.randomUUID(), file, progress: 0 }]);
+                setShowVoiceRecorder(false);
+              }}
+              onCancel={() => setShowVoiceRecorder(false)}
+            />
+          ) : (
+            <div className="relative flex items-end gap-2">
+              {!editing && (
+                <div className="relative flex shrink-0 items-center">
+                  <button
+                    type="button"
+                    onClick={() => { setShowAttachMenu((v) => !v); setShowEmojiPicker(false); }}
+                    className="grid h-11 w-11 place-items-center rounded-full glass hover:bg-foreground/10 transition-colors"
+                    aria-label="Attach file"
+                  >
+                    <Plus className="h-5 w-5 text-muted-foreground" />
+                  </button>
+                  {showAttachMenu && (
+                    <AttachmentActionMenu
+                      onClose={() => setShowAttachMenu(false)}
+                      onSelectImages={(files) => { stageFiles(files); setShowAttachMenu(false); }}
+                      onSelectFile={(file) => { stageFiles([file]); setShowAttachMenu(false); }}
+                      onOpenCamera={() => { setShowCamera(true); setShowAttachMenu(false); }}
+                      onStartVoice={() => { setShowVoiceRecorder(true); setShowAttachMenu(false); }}
+                    />
+                  )}
+                </div>
+              )}
+              <div className="relative flex min-w-0 flex-1 items-end glass rounded-3xl border border-border">
+                <textarea
+                  ref={composerRef}
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    if (!vanishActive) notifyTyping();
+                    const el = e.currentTarget;
+                    el.style.height = "auto";
+                    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+                  }}
+                  onPaste={(e) => {
+                    const items = e.clipboardData?.items;
+                    if (!items) return;
+                    const files: File[] = [];
+                    for (let i = 0; i < items.length; i++) {
+                      const item = items[i];
+                      if (item.kind === "file") {
+                        const file = item.getAsFile();
+                        if (file) files.push(file);
+                      }
+                    }
+                    if (files.length > 0) {
+                      e.preventDefault();
+                      stageFiles(files);
+                      showToast(`${files.length} item${files.length > 1 ? "s" : ""} pasted from clipboard`);
+                    }
+                  }}
+                  onFocus={() => {
+                    setShowAttachMenu(false);
+                    setShowEmojiPicker(false);
+                    setTimeout(() => {
+                      scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight });
+                    }, 250);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+                  }}
+                  rows={1}
+                  placeholder={vanishActive ? "Vanish message..." : editing ? "Edit message" : "Message"}
+                  className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"
+                  aria-label={vanishActive ? "Type a vanish message" : "Type a message"}
+                />
+                {!vanishActive && (
+                  <div className="relative shrink-0 self-end pb-1 pr-1">
+                    <button
+                      type="button"
+                      onClick={() => { setShowEmojiPicker((v) => !v); setShowAttachMenu(false); }}
+                      className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover:bg-foreground/10 transition-colors"
+                      aria-label="Emoji"
+                    >
+                      <Smile className="h-[1.125rem] w-[1.125rem]" />
+                    </button>
+                    {showEmojiPicker && (
+                      <EmojiPickerPopover
+                        onSelect={(emoji) => { setText((prev) => prev + emoji); composerRef.current?.focus(); }}
+                        onClose={() => setShowEmojiPicker(false)}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+              {(text.trim() || stagedFiles.length > 0 || editing) ? (
+                <button
+                  type="submit"
+                  disabled={isSendingAttachment || (!text.trim() && stagedFiles.length === 0 && !editing) || (!vanishActive && (send.isPending || commitEdit.isPending))}
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow transition-all disabled:opacity-40 glow-primary"
+                  aria-label={editing ? "Save" : vanishActive ? "Send vanish message" : "Send"}
+                >
+                  {isSendingAttachment ? <Loader2 className="h-4 w-4 animate-spin" /> : vanishActive ? <Moon className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setShowVoiceRecorder(true); setShowAttachMenu(false); setShowEmojiPicker(false); }}
+                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full glass hover:bg-foreground/10 transition-colors"
+                  aria-label="Record voice message"
+                >
+                  <Mic className="h-5 w-5 text-muted-foreground" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </form>
+
+      {showCamera && (
+        <CameraCaptureModal
+          onCapture={(file) => { stageFiles([file]); setShowCamera(false); }}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
 
       {menu && (
         <ContextMenu
@@ -1436,6 +1726,7 @@ function ChatRoom() {
           isPinned={pinnedIds.has(menu.id)}
           isStarred={starSet.has(menu.id)}
           onClose={() => setMenu(null)}
+          onShowToast={showToast}
           onReact={async (emoji) => {
             await doReact({ data: { message_id: menu.id, emoji } });
             qc.invalidateQueries({ queryKey: ["reactions", conversationId] });
@@ -1592,6 +1883,18 @@ function ChatRoom() {
           <div className="glass rounded-full px-4 py-2 text-xs font-medium shadow-lg">{toast}</div>
         </div>
       )}
+
+      {mediaViewer && (
+        <MediaViewerModal
+          attachments={messageById.get(mediaViewer.messageId)?.attachments ?? []}
+          startIndex={mediaViewer.index}
+          onClose={() => setMediaViewer(null)}
+          onRequestUrl={async (id) => {
+            const media = await getAuthenticatedAttachment(id);
+            return media.objectUrl;
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1611,11 +1914,13 @@ function ContextMenu({
   onInfo,
   onPin,
   onStar,
+  onShowToast,
 }: {
   menu: NonNullable<MenuState>;
   isPinned: boolean;
   isStarred: boolean;
   onClose: () => void;
+  onShowToast?: (msg: string) => void;
   onReact: (emoji: string) => void;
   onReply: () => void;
   onEdit: () => void;
@@ -1628,6 +1933,14 @@ function ContextMenu({
   onStar: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
@@ -1642,9 +1955,32 @@ function ContextMenu({
   }, [onClose]);
 
   const W = 220;
-  const H = 400;
-  const left = Math.min(menu.x, window.innerWidth - W - 8);
-  const top = Math.min(menu.y, window.innerHeight - H - 8);
+  const H = 430;
+  const left = Math.max(12, Math.min(menu.x, (typeof window !== "undefined" ? window.innerWidth : 800) - W - 12));
+  const top = Math.max(12, Math.min(menu.y, (typeof window !== "undefined" ? window.innerHeight : 600) - H - 12));
+
+  const attachments = menu.msg.attachments ?? [];
+  const firstImage = attachments.find((a) => a.mime_type.startsWith("image/"));
+  const firstAudio = attachments.find((a) => a.mime_type.startsWith("audio/"));
+  const firstFile = attachments.find((a) => !a.mime_type.startsWith("image/") && !a.mime_type.startsWith("audio/"));
+
+  const handleSaveMedia = async (att: { id: string; original_filename: string }) => {
+    try {
+      await downloadAuthenticatedAttachment(att.id, att.original_filename);
+      onShowToast?.("Download started");
+    } catch {
+      onShowToast?.("Download failed");
+    }
+  };
+
+  const handleCopyImage = async (attId: string) => {
+    try {
+      await copyImageToClipboard(attId);
+      onShowToast?.("Image copied to clipboard");
+    } catch {
+      onShowToast?.("Could not copy image");
+    }
+  };
 
   const Item = ({
     icon: Icon,
@@ -1652,51 +1988,79 @@ function ContextMenu({
     onClick,
     danger,
   }: {
-    icon: typeof Reply;
+    icon: any;
     label: string;
     onClick: () => void;
     danger?: boolean;
   }) => (
     <button
+      type="button"
       onClick={() => { onClick(); onClose(); }}
       className={[
-        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-foreground/10",
-        danger ? "text-destructive" : "",
+        "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs sm:text-sm font-medium transition hover:bg-muted active:scale-[0.98]",
+        danger ? "text-destructive hover:bg-destructive/10" : "text-foreground",
       ].join(" ")}
     >
-      <Icon className="h-4 w-4 opacity-80" />
-      <span className="font-medium">{label}</span>
+      <Icon className="h-4 w-4 shrink-0 opacity-80" />
+      <span>{label}</span>
     </button>
   );
 
   return (
-    <div className="fixed inset-0 z-40 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-start bg-black/40 backdrop-blur-[2px] animate-fade-in" onClick={onClose}>
       <div
         ref={ref}
-        style={{ left, top, width: W }}
-        className="glass absolute rounded-xl border border-border p-1.5 shadow-2xl animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+        style={isMobile ? undefined : { position: "absolute", left, top, width: W }}
+        className={
+          isMobile
+            ? "w-full max-w-lg mx-auto bg-card text-card-foreground border-t border-border rounded-t-3xl p-4 shadow-2xl animate-slide-up pb-[max(1rem,env(safe-area-inset-bottom))]"
+            : "bg-card text-card-foreground rounded-2xl border border-border p-1.5 shadow-2xl animate-scale-in"
+        }
       >
         <div className="flex justify-around px-1 py-1">
           {QUICK_EMOJI.map((e) => (
             <button
+              type="button"
               key={e}
               onClick={() => { onReact(e); onClose(); }}
-              className="grid h-8 w-8 place-items-center rounded-full text-lg transition hover:scale-125 hover:bg-foreground/10"
+              className="grid h-9 w-9 place-items-center rounded-full text-xl transition hover:scale-125 hover:bg-muted active:scale-95"
             >
               {e}
             </button>
           ))}
         </div>
-        <div className="my-1 h-px bg-border" />
+
+        <div className="my-1.5 h-px bg-border/60" />
+
+        {/* Media-specific actions */}
+        {firstImage && (
+          <>
+            <Item icon={Download} label="Save image" onClick={() => void handleSaveMedia(firstImage)} />
+            <Item icon={Copy} label="Copy image" onClick={() => void handleCopyImage(firstImage.id)} />
+          </>
+        )}
+        {firstAudio && (
+          <Item icon={Download} label="Save audio" onClick={() => void handleSaveMedia(firstAudio)} />
+        )}
+        {firstFile && (
+          <Item icon={Download} label="Download file" onClick={() => void handleSaveMedia(firstFile)} />
+        )}
+
+        {/* Messaging actions */}
         <Item icon={Reply} label="Reply" onClick={onReply} />
-        {menu.mine && <Item icon={Pencil} label="Edit" onClick={onEdit} />}
-        <Item icon={Copy} label="Copy" onClick={onCopy} />
+        {menu.mine && !firstImage && !firstAudio && !firstFile && menu.msg.body && (
+          <Item icon={Pencil} label="Edit" onClick={onEdit} />
+        )}
+        {menu.msg.body && (
+          <Item icon={Copy} label={firstImage || firstFile || firstAudio ? "Copy caption" : "Copy text"} onClick={onCopy} />
+        )}
         <Item icon={Forward} label="Forward" onClick={onForward} />
         <Item icon={isPinned ? PinOff : Pin} label={isPinned ? "Unpin" : "Pin"} onClick={onPin} />
         <Item icon={Star} label={isStarred ? "Unstar" : "Star"} onClick={onStar} />
         <Item icon={CheckSquare} label="Select" onClick={onSelect} />
         {menu.mine && <Item icon={Info} label="Info" onClick={onInfo} />}
-        <div className="my-1 h-px bg-border" />
+        <div className="my-1.5 h-px bg-border/60" />
         <Item icon={Trash2} label="Delete" onClick={onDelete} danger />
       </div>
     </div>
