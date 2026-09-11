@@ -1,8 +1,9 @@
 import type { AppSupabase } from "@/lib/infra/supabase/app-client";
 import { isUniqueViolation, mapInfraError } from "@/lib/infra/supabase/map-error";
 import type { ChatProfile, FriendProfile, Profile } from "@/lib/domain/types";
-import type { ProfilePatch, ProfileRepository } from "@/lib/repositories/ports";
-import { ConflictError } from "@/lib/domain/errors";
+import type { ProfilePatch, ProfileRepository, UsernameAvailabilityResult } from "@/lib/repositories/ports";
+import { ConflictError, ValidationError } from "@/lib/domain/errors";
+import { validateUsername, generateCandidateSuggestions } from "@/lib/username";
 
 export class SupabaseProfileRepository implements ProfileRepository {
   constructor(private readonly supabase: AppSupabase) {}
@@ -14,14 +15,23 @@ export class SupabaseProfileRepository implements ProfileRepository {
   }
 
   async update(id: string, patch: ProfilePatch): Promise<Profile> {
+    const payload: Record<string, unknown> = { ...patch, updated_at: new Date().toISOString() };
+    if (patch.username !== undefined) {
+      const val = validateUsername(patch.username);
+      if (!val.valid) throw new ValidationError(val.error ?? "Invalid username");
+      payload.username = val.normalized;
+    }
+
     const { data, error } = await this.supabase
       .from("profiles")
-      .update({ ...patch, updated_at: new Date().toISOString() })
+      .update(payload)
       .eq("id", id)
       .select()
       .single();
     if (error) {
-      if (isUniqueViolation(error)) throw new ConflictError("Username is taken");
+      if (isUniqueViolation(error)) {
+        throw new ConflictError("Username is no longer available. Please choose another username.");
+      }
       mapInfraError(error);
     }
     return data as Profile;
@@ -37,7 +47,10 @@ export class SupabaseProfileRepository implements ProfileRepository {
   }
 
   async search(query: string, excludeId: string): Promise<FriendProfile[]> {
-    const q = query.toLowerCase().replace(/[%_]/g, "\\$&");
+    const normalizedQuery = query.replace(/^@+/, "").trim();
+    if (!normalizedQuery) return [];
+
+    const q = normalizedQuery.toLowerCase().replace(/[%_]/g, "\\$&");
     const { data, error } = await this.supabase
       .from("profiles")
       .select("id, username, display_name, avatar_url")
@@ -68,18 +81,63 @@ export class SupabaseProfileRepository implements ProfileRepository {
     return data ?? null;
   }
 
-  async checkUsernameAvailability(username: string): Promise<boolean> {
-    const normalized = username.replace(/^@/, '').trim().toLowerCase();
-    if (!normalized) return false;
+  async checkUsernameAvailability(username: string, currentUserId?: string): Promise<UsernameAvailabilityResult> {
+    const val = validateUsername(username);
+    if (!val.valid) {
+      return {
+        available: false,
+        username: val.normalized,
+        reason: val.reason === "reserved" ? "reserved" : "invalid",
+        error: val.error,
+      };
+    }
+
+    if (currentUserId) {
+      const currentProfile = await this.getById(currentUserId);
+      if (currentProfile?.username && currentProfile.username.toLowerCase() === val.normalized) {
+        return {
+          available: true,
+          isCurrent: true,
+          username: val.normalized,
+        };
+      }
+    }
 
     const { data, error } = await this.supabase
       .from("profiles")
       .select("id")
-      .eq("username", normalized)
+      .ilike("username", val.normalized)
       .limit(1)
       .maybeSingle();
       
     if (error) mapInfraError(error);
-    return data === null;
+    
+    if (!data) {
+      return {
+        available: true,
+        isCurrent: false,
+        username: val.normalized,
+      };
+    }
+
+    const candidates = generateCandidateSuggestions(val.normalized);
+    let verifiedSuggestions: string[] = [];
+
+    if (candidates.length > 0) {
+      const { data: takenData } = await this.supabase
+        .from("profiles")
+        .select("username")
+        .in("username", candidates);
+      const takenSet = new Set((takenData ?? []).map((r: { username: string }) => r.username.toLowerCase()));
+      verifiedSuggestions = candidates.filter((c) => !takenSet.has(c.toLowerCase())).slice(0, 4);
+    }
+
+    return {
+      available: false,
+      username: val.normalized,
+      reason: "taken",
+      error: "Username is already taken",
+      suggestions: verifiedSuggestions,
+    };
   }
 }

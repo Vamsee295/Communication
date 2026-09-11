@@ -56,6 +56,42 @@ export class SupabaseDeviceRepository implements DeviceRepository {
     if (error) mapInfraError(error);
     return (data as { id: string; device_key: string } | null) ?? null;
   }
+
+  async delete(userId: string, deviceId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from("devices")
+      .delete()
+      .eq("id", deviceId)
+      .eq("user_id", userId)
+      .not("revoked_at", "is", null)
+      .select("id");
+    if (error) mapInfraError(error);
+    return ((data as Array<{ id: string }>) ?? []).length > 0;
+  }
+
+  async deleteMany(userId: string, deviceIds: string[]): Promise<number> {
+    if (deviceIds.length === 0) return 0;
+    const { data, error } = await this.supabase
+      .from("devices")
+      .delete()
+      .in("id", deviceIds)
+      .eq("user_id", userId)
+      .not("revoked_at", "is", null)
+      .select("id");
+    if (error) mapInfraError(error);
+    return ((data as Array<{ id: string }>) ?? []).length;
+  }
+
+  async clearRevoked(userId: string): Promise<number> {
+    const { data, error } = await this.supabase
+      .from("devices")
+      .delete()
+      .eq("user_id", userId)
+      .not("revoked_at", "is", null)
+      .select("id");
+    if (error) mapInfraError(error);
+    return ((data as Array<{ id: string }>) ?? []).length;
+  }
 }
 
 export class SupabaseCallRepository implements CallRepository {
@@ -110,5 +146,27 @@ export class SupabaseCallRepository implements CallRepository {
       .eq("id", callId)
       .or(`caller_id.eq.${userId},callee_id.eq.${userId}`);
     if (error) mapInfraError(error);
+  }
+
+  async deleteManyFromHistory(callIds: string[], userId: string): Promise<number> {
+    if (callIds.length === 0) return 0;
+    const { data, error } = await this.supabase
+      .from("calls")
+      .delete()
+      .in("id", callIds)
+      .or(`caller_id.eq.${userId},callee_id.eq.${userId}`)
+      .select("id");
+    if (error) mapInfraError(error);
+    return ((data as Array<{ id: string }>) ?? []).length;
+  }
+
+  async clearHistory(userId: string): Promise<number> {
+    const { data, error } = await this.supabase
+      .from("calls")
+      .delete()
+      .or(`caller_id.eq.${userId},callee_id.eq.${userId}`)
+      .select("id");
+    if (error) mapInfraError(error);
+    return ((data as Array<{ id: string }>) ?? []).length;
   }
 }

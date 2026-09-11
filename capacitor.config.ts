@@ -1,6 +1,6 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
-const DEFAULT_SERVER_URL = 'https://communication-gff0np6a7-vamsees-projects-4fddfad4.vercel.app';
+const DEFAULT_SERVER_URL = 'https://communication-puce.vercel.app';
 const serverUrl = process.env.CAPACITOR_SERVER_URL || DEFAULT_SERVER_URL;
 
 const config: CapacitorConfig = {

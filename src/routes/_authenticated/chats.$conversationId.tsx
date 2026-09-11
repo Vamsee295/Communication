@@ -104,6 +104,8 @@ import {
   updateGroupMemberRole,
   updateGroupTitle,
   leaveConversation,
+  clearConversationHistory,
+  deleteConversation,
   finalizeVanishSession,
   toggleDisappearingMessages,
   setConversationFlags,
@@ -167,6 +169,8 @@ function ChatRoom() {
   const doBlock = useServerFn(blockContact);
   const doFlags = useServerFn(setConversationFlags);
   const doLeave = useServerFn(leaveConversation);
+  const doClearHistory = useServerFn(clearConversationHistory);
+  const doDeleteConversation = useServerFn(deleteConversation);
   const doFinalizeVanishSession = useServerFn(finalizeVanishSession);
   const doStartAttachmentUpload = useServerFn(startAttachmentUpload);
   const doConfirmAttachmentUpload = useServerFn(confirmAttachmentUpload);
@@ -395,10 +399,40 @@ function ChatRoom() {
     }
   };
 
-  const handleClearChat = () => {
-    qc.setQueryData(["messages", conversationId], []);
-    import("sonner").then((m) => m.toast.success("Chat history cleared from this view"));
-    setConfirmAction(null);
+  const handleClearChat = async () => {
+    try {
+      await doClearHistory({ data: { conversation_id: conversationId } });
+      qc.setQueryData(["messages", conversationId], []);
+      qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+      qc.invalidateQueries({ queryKey: ["pins", conversationId] });
+      qc.invalidateQueries({ queryKey: ["stars-in-conv", conversationId] });
+      qc.invalidateQueries({ queryKey: ["reactions", conversationId] });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      setPinsCollapsed(true);
+      setPinPanelOpen(false);
+      import("sonner").then((m) => m.toast.success("Chat history cleared"));
+    } catch (e) {
+      import("sonner").then((m) =>
+        m.toast.error(e instanceof Error ? e.message : "Failed to clear chat history"),
+      );
+    } finally {
+      setConfirmAction(null);
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    try {
+      await doDeleteConversation({ data: { conversation_id: conversationId } });
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      import("sonner").then((m) => m.toast.success("Chat deleted"));
+      navigate({ to: "/chats" });
+    } catch (e) {
+      import("sonner").then((m) =>
+        m.toast.error(e instanceof Error ? e.message : "Failed to delete conversation"),
+      );
+    } finally {
+      setConfirmAction(null);
+    }
   };
 
   const handleBlockUser = async () => {
@@ -1575,6 +1609,15 @@ function ChatRoom() {
                   <button
                     onClick={() => {
                       setHeaderMenu(false);
+                      setConfirmAction("delete");
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-destructive hover:bg-destructive/10 transition"
+                  >
+                    <Trash2 className="h-4 w-4" /> Delete Chat
+                  </button>
+                  <button
+                    onClick={() => {
+                      setHeaderMenu(false);
                       setConfirmAction("block");
                     }}
                     className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-medium text-destructive hover:bg-destructive/10 transition"
@@ -1846,6 +1889,13 @@ function ChatRoom() {
               caption={attachCaption}
               onCaptionChange={setAttachCaption}
               onRemove={(id) => setStagedFiles((prev) => prev.filter((s) => s.id !== id))}
+              onCancel={() => {
+                setStagedFiles([]);
+                setAttachCaption("");
+              }}
+              onSend={uploadAndSendAttachments}
+              onAddFiles={(files) => stageFiles(files)}
+              isSending={isSendingAttachment}
             />
           )}
 
@@ -1867,10 +1917,10 @@ function ChatRoom() {
                   <button
                     type="button"
                     onClick={() => { setShowAttachMenu((v) => !v); setShowEmojiPicker(false); }}
-                    className="grid h-11 w-11 place-items-center rounded-full glass hover:bg-foreground/10 transition-colors"
+                    className="grid h-10 w-10 sm:h-11 sm:w-11 place-items-center rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                     aria-label="Attach file"
                   >
-                    <Plus className="h-5 w-5 text-muted-foreground" />
+                    <Plus className="h-5 w-5" />
                   </button>
                   {showAttachMenu && (
                     <AttachmentActionMenu
@@ -1886,7 +1936,7 @@ function ChatRoom() {
                   )}
                 </div>
               )}
-              <div className="relative flex min-w-0 flex-1 items-end glass rounded-3xl border border-border">
+              <div className="relative flex min-w-0 flex-1 items-end rounded-2xl border border-border/80 bg-card/90 shadow-sm focus-within:border-primary/50 transition-colors">
                 <textarea
                   ref={composerRef}
                   value={text}
@@ -1926,7 +1976,7 @@ function ChatRoom() {
                   }}
                   rows={1}
                   placeholder={vanishActive ? "Vanish message..." : editing ? "Edit message" : "Message"}
-                  className="max-h-32 min-h-11 flex-1 resize-none bg-transparent px-4 py-3 text-sm outline-none"
+                  className="max-h-32 min-h-10 sm:min-h-11 flex-1 resize-none bg-transparent px-3.5 sm:px-4 py-2.5 sm:py-3 text-sm outline-none"
                   aria-label={vanishActive ? "Type a vanish message" : "Type a message"}
                 />
                 {!vanishActive && (
@@ -1934,7 +1984,7 @@ function ChatRoom() {
                     <button
                       type="button"
                       onClick={() => { setShowEmojiPicker((v) => !v); setShowAttachMenu(false); }}
-                      className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover:bg-foreground/10 transition-colors"
+                      className="grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/5 transition-colors"
                       aria-label="Emoji"
                     >
                       <Smile className="h-[1.125rem] w-[1.125rem]" />
@@ -1973,7 +2023,7 @@ function ChatRoom() {
                 <button
                   type="submit"
                   disabled={isSendingAttachment || (!text.trim() && stagedFiles.length === 0 && !editing) || (!vanishActive && (send.isPending || commitEdit.isPending))}
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow transition-all disabled:opacity-40 glow-primary"
+                  className="grid h-10 w-10 sm:h-11 sm:w-11 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm transition-all hover:bg-primary/90 active:scale-95 disabled:opacity-40"
                   aria-label={editing ? "Save" : vanishActive ? "Send vanish message" : "Send"}
                 >
                   {isSendingAttachment ? <Loader2 className="h-4 w-4 animate-spin" /> : vanishActive ? <Moon className="h-4 w-4" /> : <Send className="h-4 w-4" />}
@@ -1982,10 +2032,10 @@ function ChatRoom() {
                 <button
                   type="button"
                   onClick={() => { setShowVoiceRecorder(true); setShowAttachMenu(false); setShowEmojiPicker(false); }}
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full glass hover:bg-foreground/10 transition-colors"
-                  aria-label="Record voice message"
+                  className="grid h-10 w-10 sm:h-11 sm:w-11 shrink-0 place-items-center rounded-full bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Voice message"
                 >
-                  <Mic className="h-5 w-5 text-muted-foreground" />
+                  <Mic className="h-5 w-5" />
                 </button>
               )}
             </div>
@@ -2204,20 +2254,26 @@ function ChatRoom() {
           title={
             confirmAction === "clear"
               ? "Clear chat history?"
+              : confirmAction === "delete"
+              ? "Delete chat?"
               : confirmAction === "block"
               ? `Block ${otherProfile?.display_name ?? otherProfile?.username ?? "this user"}?`
               : "Leave this group?"
           }
           body={
             confirmAction === "clear"
-              ? "This will clear the message history from your screen."
+              ? "This will permanently delete all messages and shared media from this conversation."
+              : confirmAction === "delete"
+              ? "This will permanently delete this conversation and its message history."
               : confirmAction === "block"
               ? "They won't be able to message or call you until you unblock them."
               : "You will leave this group conversation. You will no longer receive new messages."
           }
           action={
             confirmAction === "clear"
-              ? "Clear"
+              ? "Clear Chat"
+              : confirmAction === "delete"
+              ? "Delete Chat"
               : confirmAction === "block"
               ? "Block"
               : "Leave"
@@ -2225,6 +2281,7 @@ function ChatRoom() {
           onCancel={() => setConfirmAction(null)}
           onConfirm={() => {
             if (confirmAction === "clear") handleClearChat();
+            else if (confirmAction === "delete") handleDeleteChat();
             else if (confirmAction === "block") handleBlockUser();
             else if (confirmAction === "leave") handleLeaveGroup();
           }}

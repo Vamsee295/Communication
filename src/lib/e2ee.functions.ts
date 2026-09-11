@@ -69,13 +69,135 @@ export const revokeDeviceCrypto = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ device_id: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => service(context).revoke(data.device_id));
 
-// DUMMY FUNCTIONS for E2EE adapter to compile
-export const getE2eeRelayDevices = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => [] as any);
-export const getE2eeRelayIdentity = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => null as any);
-export const getE2eeRelayPreKeyBundle = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => null as any);
-export const getPendingE2eeEnvelopes = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => [] as any);
-export const markE2eeEnvelopeDelivered = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => {});
-export const registerE2eeRelayDevice = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => ({ protocol_device_id: 1 } as any));
-export const sendE2eeEnvelope = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => ({ message_id: "", server_timestamp: 0 } as any));
-export const syncE2eeRelayIdentity = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => {});
-export const syncE2eeRelayPrekeys = createServerFn({ method: "POST" }).inputValidator((d: unknown) => d as any).handler(async () => {});
+import { PostgresE2eeRelayRepository } from "@/lib/repositories/postgres/postgres-e2ee-relay-repository";
+
+function relayService() {
+  const sql = getPostgresClient();
+  return new PostgresE2eeRelayRepository(sql);
+}
+
+// ==============================================================================
+// E2EE SIGNAL PROTOCOL RELAY TRANSPORT (ZERO-KNOWLEDGE BUFFER)
+// ==============================================================================
+
+export const registerE2eeRelayDevice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({
+      device_key: z.string().min(1),
+      device_type: z.enum(["mobile", "desktop", "tablet", "web"]).default("web"),
+    }).parse(data)
+  )
+  .handler(async ({ data, context }) => {
+    return relayService().registerDevice(context.userId, data.device_key, data.device_type);
+  });
+
+export const getE2eeRelayDevices = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ user_id: z.string().uuid() }).parse(data)
+  )
+  .handler(async ({ data }) => {
+    return relayService().getDevices(data.user_id);
+  });
+
+export const syncE2eeRelayIdentity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({
+      device_id: z.number().int().positive(),
+      identity_type: z.string().default("aci"),
+      x25519_public_key: z.string().min(1),
+      ed25519_public_key: z.string().min(1),
+      registration_id: z.number().int().nonnegative(),
+    }).parse(data)
+  )
+  .handler(async ({ data, context }) => {
+    await relayService().syncIdentity({
+      user_id: context.userId,
+      device_id: data.device_id,
+      identity_type: data.identity_type,
+      x25519_public_key: data.x25519_public_key,
+      ed25519_public_key: data.ed25519_public_key,
+      registration_id: data.registration_id,
+    });
+  });
+
+export const getE2eeRelayIdentity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ user_id: z.string().uuid() }).parse(data)
+  )
+  .handler(async ({ data }) => {
+    return relayService().getIdentity(data.user_id);
+  });
+
+export const syncE2eeRelayPrekeys = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({
+      device_id: z.number().int().positive(),
+      identity_type: z.string().default("aci"),
+      keys: z.array(
+        z.object({
+          type: z.string(),
+          keyId: z.number().int().nonnegative(),
+          publicKey: z.string().min(1),
+          signature: z.string().optional(),
+        })
+      ),
+    }).parse(data)
+  )
+  .handler(async ({ data, context }) => {
+    await relayService().syncPrekeys(context.userId, data.device_id, data.keys);
+  });
+
+export const getE2eeRelayPreKeyBundle = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({
+      user_id: z.string().uuid(),
+      device_id: z.number().int().positive(),
+    }).parse(data)
+  )
+  .handler(async ({ data }) => {
+    return relayService().getPreKeyBundle(data.user_id, data.device_id);
+  });
+
+export const sendE2eeEnvelope = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({
+      target_user_id: z.string().uuid(),
+      target_device_id: z.number().int().positive(),
+      sender_device_id: z.number().int().positive(),
+      ciphertext: z.string().min(1),
+      message_type: z.number().int(),
+      timestamp: z.number().int(),
+      client_message_id: z.string().optional(),
+      urgent: z.boolean().optional(),
+      ephemeral: z.boolean().optional(),
+    }).parse(data)
+  )
+  .handler(async ({ data, context }) => {
+    return relayService().sendEnvelope(context.userId, data);
+  });
+
+export const getPendingE2eeEnvelopes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((data: unknown) =>
+    z.object({ protocol_device_id: z.number().int().positive() }).parse(data)
+  )
+  .handler(async ({ data, context }) => {
+    return relayService().getPendingEnvelopes(context.userId, data.protocol_device_id);
+  });
+
+export const markE2eeEnvelopeDelivered = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({ envelope_id: z.string().uuid() }).parse(data)
+  )
+  .handler(async ({ data, context }) => {
+    await relayService().markDelivered(data.envelope_id, context.userId);
+  });
+

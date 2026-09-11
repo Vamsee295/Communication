@@ -566,6 +566,16 @@ export const leaveConversation = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => app(context).conversations.leave(data.conversation_id));
 
+export const clearConversationHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.clearHistory(data.conversation_id));
+
+export const deleteConversation = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ conversation_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).conversations.deleteConversation(data.conversation_id));
+
 export const blockContact = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth, requireNotFrozen])
   .inputValidator((data: unknown) => z.object({ user_id: z.string().uuid() }).parse(data))

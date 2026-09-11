@@ -83,28 +83,35 @@ export function EmojiPickerPopover({
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
-
-      {/* Panel */}
       <div
-        className="absolute bottom-full left-0 z-50 mb-2 w-80 overflow-hidden rounded-3xl border border-border bg-card shadow-2xl animate-scale-in"
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none"
+        onClick={onClose}
+        aria-hidden
+      />
+
+      {/* Panel: Mobile bottom sheet, Desktop popover */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-50 flex max-h-[75vh] flex-col rounded-t-3xl border-t border-border bg-card/95 shadow-2xl backdrop-blur-xl pb-[max(1rem,env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-6 duration-200 sm:absolute sm:inset-x-auto sm:bottom-full sm:right-0 sm:left-auto sm:mb-2 sm:w-80 sm:max-h-none sm:rounded-3xl sm:border sm:bg-card sm:p-0 sm:shadow-2xl sm:slide-in-from-bottom-2 sm:animate-scale-in"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Expression picker"
       >
+        {/* Mobile drag handle */}
+        <div className="mx-auto mt-2.5 mb-1 h-1 w-10 rounded-full bg-muted-foreground/30 sm:hidden" />
+
         {/* Main Mode Tabs: Emoji / Stickers / GIFs */}
         <div className="flex items-center border-b border-border/50 bg-muted/30 p-1.5 gap-1">
           <button
             type="button"
             onClick={() => setMode("emoji")}
             className={[
-              "flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-1.5 text-xs font-semibold transition",
+              "flex flex-1 items-center justify-center gap-1.5 rounded-2xl py-2 text-xs font-semibold transition sm:py-1.5",
               mode === "emoji"
                 ? "bg-card text-foreground shadow-sm font-bold"
                 : "text-muted-foreground hover:text-foreground",
             ].join(" ")}
           >
-            <Smile className="h-3.5 w-3.5" /> Emojis
+            <Smile className="h-3.5 w-3.5 text-primary" /> Emojis
           </button>
           <button
             type="button"
@@ -185,7 +192,7 @@ export function EmojiPickerPopover({
             )}
 
             {/* Emoji grid */}
-            <div className="grid grid-cols-8 gap-0.5 overflow-y-auto p-2" style={{ maxHeight: 200 }}>
+            <div className="grid grid-cols-8 gap-1 overflow-y-auto p-2.5 max-h-64 sm:max-h-[200px]">
               {displayEmojis.length > 0 ? (
                 displayEmojis.map((emoji) => (
                   <button
@@ -195,7 +202,7 @@ export function EmojiPickerPopover({
                       onSelectEmoji(emoji);
                       onClose();
                     }}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl text-lg transition-transform hover:bg-foreground/5 active:scale-90"
+                    className="flex h-9 w-9 sm:h-8 sm:w-8 items-center justify-center rounded-xl text-xl sm:text-lg transition-transform hover:bg-foreground/5 active:scale-90 touch-manipulation"
                     aria-label={emoji}
                   >
                     {emoji}

@@ -531,6 +531,49 @@ export class PostgresConversationRepository implements ConversationRepository {
     `;
   }
 
+  async clearHistory(conversationId: string): Promise<void> {
+    await this.db.begin(async (tx) => {
+      await tx`
+        DELETE FROM public.attachments
+         WHERE conversation_id = ${conversationId}
+           AND (
+             message_id IS NULL 
+             OR message_id NOT IN (
+               SELECT message_id FROM public.pinned_messages WHERE conversation_id = ${conversationId}
+             )
+           );
+      `;
+      await tx`
+        DELETE FROM public.messages
+         WHERE conversation_id = ${conversationId}
+           AND id NOT IN (
+             SELECT message_id FROM public.pinned_messages WHERE conversation_id = ${conversationId}
+           );
+      `;
+      await tx`
+        UPDATE public.conversations
+           SET last_message_at = COALESCE(
+                 (SELECT MAX(created_at) FROM public.messages WHERE conversation_id = ${conversationId}),
+                 created_at
+               )
+         WHERE id = ${conversationId};
+      `;
+      await tx`
+        UPDATE public.conversation_members
+           SET last_read_at = '1970-01-01 00:00:00+00'
+         WHERE conversation_id = ${conversationId};
+      `;
+    });
+  }
+
+  async deleteConversation(conversationId: string): Promise<void> {
+    await this.db.begin(async (tx) => {
+      await tx`DELETE FROM public.attachments WHERE conversation_id = ${conversationId}`;
+      await tx`DELETE FROM public.calls WHERE conversation_id = ${conversationId}`;
+      await tx`DELETE FROM public.conversations WHERE id = ${conversationId}`;
+    });
+  }
+
   async keepVanishSessionAlive(conversationId: string): Promise<void> {
     await this.db`
       UPDATE public.conversations

@@ -51,6 +51,17 @@ export const listCalls = createServerFn({ method: "GET" })
   .handler(async ({ context }): Promise<CallHistoryItem[]> => app(context).calls.listHistory());
 
 export const deleteCallFromHistory = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireSupabaseAuth, requireNotFrozen])
   .inputValidator((data: unknown) => z.object({ call_id: z.string().uuid() }).parse(data))
   .handler(async ({ data, context }) => app(context).calls.deleteFromHistory(data.call_id));
+
+export const deleteCallsFromHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({ call_ids: z.array(z.string().uuid()).min(1).max(500) }).parse(data)
+  )
+  .handler(async ({ data, context }) => app(context).calls.deleteManyFromHistory(data.call_ids));
+
+export const clearCallHistory = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .handler(async ({ context }) => app(context).calls.clearHistory());

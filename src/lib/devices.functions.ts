@@ -38,3 +38,19 @@ export const validateDeviceSession = createServerFn({ method: "POST" })
     z.object({ device_key: z.string().min(1).max(100) }).parse(data)
   )
   .handler(async ({ data, context }) => app(context).devices.validate(data.device_key));
+
+export const deleteDevice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) => z.object({ device_id: z.string().uuid() }).parse(data))
+  .handler(async ({ data, context }) => app(context).devices.delete(data.device_id));
+
+export const deleteDevices = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .inputValidator((data: unknown) =>
+    z.object({ device_ids: z.array(z.string().uuid()).min(1).max(500) }).parse(data)
+  )
+  .handler(async ({ data, context }) => app(context).devices.deleteMany(data.device_ids));
+
+export const clearRevokedDevices = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth, requireNotFrozen])
+  .handler(async ({ context }) => app(context).devices.clearRevoked());

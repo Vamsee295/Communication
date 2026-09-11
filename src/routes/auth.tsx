@@ -158,141 +158,165 @@ function AuthPage() {
   return (
     <main className="flex min-h-screen bg-white font-sans selection:bg-primary/20">
       
-      {/* Left Panel - Branding (Hidden on mobile) */}
+      {/* Left Panel - Branding (Hidden on mobile, pristine split-screen on desktop) */}
       <div className="hidden lg:flex w-1/2 flex-col justify-between bg-[#F7FAFE] p-12 lg:p-16 border-r border-[#DCE8F5] relative overflow-hidden isolate">
          {/* Ambient glow */}
          <div className="absolute top-[-20%] left-[-10%] h-[800px] w-[800px] rounded-full bg-[radial-gradient(circle,rgba(37,135,245,0.08)_0%,rgba(247,250,254,0)_70%)] blur-3xl pointer-events-none -z-10" />
          
-         <div className="relative z-10 flex items-center gap-3">
+         <Link to="/" className="relative z-10 inline-flex items-center gap-3 cursor-pointer group transition-opacity hover:opacity-90">
            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white shadow-sm">
              <GhostMark className="h-[26px] w-[26px]" />
            </div>
            <span className="text-xl font-extrabold tracking-tight text-[#0B1B33]">Ghostline</span>
-         </div>
+         </Link>
          
          <div className="relative z-10 mb-16 max-w-[480px]">
-           <h1 className="text-[42px] lg:text-[52px] font-extrabold tracking-tight text-[#0B1B33] leading-[1.05] mb-6">
+           <h1 className="text-[42px] lg:text-[50px] font-extrabold tracking-tight text-[#0B1B33] leading-[1.08] mb-6">
              A quieter place<br />for conversations<br />that matter.
            </h1>
            <p className="text-[17px] text-[#64748B] leading-relaxed">
              Built for real connections. Join Ghostline to connect with the people you care about, privately and securely.
            </p>
          </div>
+
+         {/* Bottom subtle trust indicator */}
+         <div className="relative z-10 flex items-center gap-2 text-[13px] font-medium text-[#94A3B8]">
+           <span>🔒 End-to-End Encrypted</span>
+           <span>•</span>
+           <span>Zero Tracking</span>
+         </div>
       </div>
 
-      {/* Right Panel - Form Container */}
-      <div className="flex w-full lg:w-1/2 flex-col items-center justify-center px-6 py-12 relative">
+      {/* Right Panel - Focused Authentication Screen */}
+      <div className="flex w-full lg:w-1/2 flex-col justify-center items-center px-5 sm:px-8 py-8 sm:py-12 relative min-h-screen overflow-y-auto">
          
-         {/* Mobile Back Button */}
-         <div className="lg:hidden absolute top-6 left-6">
+         {/* Mobile Top Navigation / Back Button */}
+         <div className="lg:hidden w-full max-w-[400px] flex items-center justify-between mb-4">
             <button 
               id="auth-go-back"
               type="button"
               onClick={() => navigate({ to: "/" })} 
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-[#DCE8F5] bg-white text-[#0B1B33] shadow-sm transition-all hover:bg-[#F5FAFF] hover:border-primary/40 active:scale-95"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-[#DCE8F5] bg-white text-[#0B1B33] shadow-sm transition-all hover:bg-[#F5FAFF] hover:border-primary/40 active:scale-95"
+              aria-label="Back to home"
             >
                <ChevronLeft className="h-5 w-5" />
             </button>
+            <div className="h-11 w-11" aria-hidden /> {/* Spacer for centering */}
          </div>
 
          {/* Form Wrapper */}
-         <div className="w-full max-w-[380px] animate-in fade-in slide-in-from-bottom-4 duration-700 ease-out fill-mode-both">
+         <div className="w-full max-w-[400px] animate-in fade-in slide-in-from-bottom-3 duration-500 ease-out fill-mode-both">
            
-           <div className="mb-10 text-left">
-              {/* Mobile GhostMark */}
-              <div className="lg:hidden mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-white shadow-sm">
-                <GhostMark className="h-7 w-7" />
-              </div>
+           {/* Mobile Centered Ghostline Branding */}
+           <div className="lg:hidden flex items-center justify-center mb-6">
+             <Link to="/" className="inline-flex items-center gap-2.5 group">
+               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-white shadow-sm transition-transform group-hover:scale-105">
+                 <GhostMark className="h-6 w-6" />
+               </div>
+               <span className="text-xl font-bold tracking-tight text-[#0B1B33]">Ghostline</span>
+             </Link>
+           </div>
 
-              <h2 className="text-[28px] font-bold tracking-tight text-[#0B1B33]">
+           {/* Title & Subtitle */}
+           <div className="mb-7 text-center lg:text-left">
+              <h2 className="text-[26px] sm:text-[28px] font-bold tracking-tight text-[#0B1B33]">
                 {mode === "signin" ? "Welcome back" : "Create an account"}
               </h2>
-              <p className="mt-2 text-[15px] text-[#64748B]">
+              <p className="mt-1.5 text-[14.5px] text-[#64748B]">
                 {mode === "signin" ? "Enter your details to access your account." : "Start your private conversations today."}
               </p>
            </div>
 
            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-             {/* Email */}
-             <div className="relative group">
+             {/* Email Field */}
+             <div>
+               <label htmlFor="auth-email" className="block text-[13.5px] font-medium text-[#0B1B33] mb-1.5 text-left">
+                 Email address
+               </label>
                <input
                  id="auth-email"
                  type="email"
                  autoComplete="email"
-                 placeholder="Email address"
+                 placeholder="name@example.com"
                  value={email}
                  onChange={(e) => setEmail(e.target.value)}
-                 className="h-[52px] w-full rounded-xl border border-[#DCE8F5] bg-[#F5FAFF] px-4 text-[15px] text-[#0B1B33] outline-none placeholder:text-[#94A3B8] transition-all focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"
+                 className="h-[50px] w-full rounded-xl border border-[#DCE8F5] bg-[#F8FAFC] px-4 text-[15px] text-[#0B1B33] outline-none placeholder:text-[#94A3B8] transition-all focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10"
                  required
                />
              </div>
 
-             {/* Password */}
-             <div className="flex flex-col gap-2">
-               <div className="relative group flex items-center rounded-xl border border-[#DCE8F5] bg-[#F5FAFF] transition-all focus-within:border-primary focus-within:bg-white focus-within:ring-4 focus-within:ring-primary/10">
+             {/* Password Field */}
+             <div>
+               <div className="flex items-center justify-between mb-1.5">
+                 <label htmlFor="auth-password" className="block text-[13.5px] font-medium text-[#0B1B33]">
+                   Password
+                 </label>
+                 {mode === "signin" && (
+                   <Link
+                     to="/forgot-password"
+                     className="text-[13px] font-medium text-primary hover:underline transition-colors"
+                   >
+                     Forgot password?
+                   </Link>
+                 )}
+               </div>
+               <div className="relative flex items-center rounded-xl border border-[#DCE8F5] bg-[#F8FAFC] transition-all focus-within:border-primary focus-within:bg-white focus-within:ring-4 focus-within:ring-primary/10">
                  <input
                    id="auth-password"
                    type={showPassword ? "text" : "password"}
                    autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                   placeholder="Password"
+                   placeholder="Enter password (min. 8 characters)"
                    value={password}
                    onChange={(e) => setPassword(e.target.value)}
-                   className="h-[52px] w-full rounded-xl bg-transparent px-4 text-[15px] text-[#0B1B33] outline-none placeholder:text-[#94A3B8]"
+                   className="h-[50px] w-full rounded-xl bg-transparent px-4 pr-12 text-[15px] text-[#0B1B33] outline-none placeholder:text-[#94A3B8]"
                    required
                  />
                  <button
                    type="button"
                    onClick={() => setShowPassword((v) => !v)}
-                   className="pr-4 text-[#94A3B8] hover:text-[#64748B] transition-colors"
-                   tabIndex={-1}
+                   className="absolute right-1 flex h-11 w-11 items-center justify-center text-[#94A3B8] hover:text-[#0B1B33] transition-colors rounded-lg focus:outline-none"
                    aria-label={showPassword ? "Hide password" : "Show password"}
                  >
                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                  </button>
                </div>
-               
-               {mode === "signin" && (
-                 <div className="flex justify-end">
-                   <Link
-                     to="/forgot-password"
-                     className="text-[13px] font-semibold text-[#64748B] hover:text-primary transition-colors"
-                   >
-                     Forgot password?
-                   </Link>
-                 </div>
-               )}
              </div>
 
-             {/* Confirm Password */}
+             {/* Confirm Password Field (Signup only) */}
              {mode === "signup" && (
-               <div className="relative group flex items-center rounded-xl border border-[#DCE8F5] bg-[#F5FAFF] transition-all focus-within:border-primary focus-within:bg-white focus-within:ring-4 focus-within:ring-primary/10">
-                 <input
-                   id="auth-confirm-password"
-                   type={showConfirmPassword ? "text" : "password"}
-                   autoComplete="new-password"
-                   placeholder="Repeat password"
-                   value={confirmPassword}
-                   onChange={(e) => setConfirmPassword(e.target.value)}
-                   className="h-[52px] w-full rounded-xl bg-transparent px-4 text-[15px] text-[#0B1B33] outline-none placeholder:text-[#94A3B8]"
-                   required
-                 />
-                 <button
-                   type="button"
-                   onClick={() => setShowConfirmPassword((v) => !v)}
-                   className="pr-4 text-[#94A3B8] hover:text-[#64748B] transition-colors"
-                   tabIndex={-1}
-                   aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                 >
-                   {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                 </button>
+               <div>
+                 <label htmlFor="auth-confirm-password" className="block text-[13.5px] font-medium text-[#0B1B33] mb-1.5 text-left">
+                   Repeat password
+                 </label>
+                 <div className="relative flex items-center rounded-xl border border-[#DCE8F5] bg-[#F8FAFC] transition-all focus-within:border-primary focus-within:bg-white focus-within:ring-4 focus-within:ring-primary/10">
+                   <input
+                     id="auth-confirm-password"
+                     type={showConfirmPassword ? "text" : "password"}
+                     autoComplete="new-password"
+                     placeholder="Confirm your password"
+                     value={confirmPassword}
+                     onChange={(e) => setConfirmPassword(e.target.value)}
+                     className="h-[50px] w-full rounded-xl bg-transparent px-4 pr-12 text-[15px] text-[#0B1B33] outline-none placeholder:text-[#94A3B8]"
+                     required
+                   />
+                   <button
+                     type="button"
+                     onClick={() => setShowConfirmPassword((v) => !v)}
+                     className="absolute right-1 flex h-11 w-11 items-center justify-center text-[#94A3B8] hover:text-[#0B1B33] transition-colors rounded-lg focus:outline-none"
+                     aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                   >
+                     {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                   </button>
+                 </div>
                </div>
              )}
 
+             {/* Submit CTA */}
              <button
                id="auth-submit"
                type="submit"
                disabled={loading}
-               className="mt-2 flex h-[52px] w-full items-center justify-center rounded-xl bg-primary text-[15px] font-bold text-white shadow-md shadow-primary/20 transition-all hover:bg-[#1467D8] active:scale-[0.98] disabled:opacity-60 disabled:hover:bg-primary"
+               className="mt-2 flex h-[50px] w-full items-center justify-center rounded-xl bg-primary text-[15.5px] font-semibold text-white shadow-sm transition-all hover:bg-[#1467D8] active:scale-[0.98] disabled:opacity-60 disabled:hover:bg-primary"
              >
                {loading ? (
                  <span className="flex items-center gap-2">
@@ -307,7 +331,7 @@ function AuthPage() {
              </button>
            </form>
 
-           {/* Mode Toggle */}
+           {/* Mode Toggle Link */}
            <div className="mt-5 text-center">
              <button
                id="auth-toggle-mode"
@@ -317,33 +341,36 @@ function AuthPage() {
                  setConfirmPassword("");
                  setPassword("");
                }}
-               className="text-[14.5px] text-[#64748B] hover:text-[#0B1B33] transition-colors"
+               className="text-[14.5px] text-[#64748B] hover:text-[#0B1B33] transition-colors py-1"
              >
                {mode === "signup" ? (
-                 <>Already have an account? <span className="font-bold text-primary">Sign in</span></>
+                 <>Already have an account? <span className="font-semibold text-primary hover:underline ml-1">Sign in</span></>
                ) : (
-                 <>Don't have an account? <span className="font-bold text-primary">Sign up</span></>
+                 <>Don't have an account? <span className="font-semibold text-primary hover:underline ml-1">Create an account</span></>
                )}
              </button>
            </div>
            
+           {/* OAuth Divider */}
            <div className="mt-7 flex items-center gap-4">
              <div className="h-px flex-1 bg-[#EAF4FF]" />
-             <span className="text-[12.5px] font-semibold text-[#94A3B8] tracking-wide">Or continue with</span>
+             <span className="text-[12.5px] font-medium text-[#94A3B8] tracking-wide">Or continue with</span>
              <div className="h-px flex-1 bg-[#EAF4FF]" />
            </div>
 
+           {/* OAuth Actions */}
            <div className="mt-6 grid grid-cols-2 gap-3">
              <button
+               type="button"
                onClick={handleGoogle}
                disabled={googleLoading || githubLoading || loading}
-               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#DCE8F5] bg-white transition-all hover:bg-[#F5FAFF] hover:border-[#B8D3F0] active:scale-[0.96] disabled:opacity-60"
+               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#DCE8F5] bg-white transition-all hover:bg-[#F8FAFC] hover:border-[#B8D3F0] active:scale-[0.97] disabled:opacity-60"
                aria-label="Continue with Google"
              >
                {googleLoading ? (
                  <>
                    <Loader2 className="h-5 w-5 animate-spin text-[#64748B]" />
-                   <span className="text-[14px] font-semibold text-[#0B1B33]">Connecting...</span>
+                   <span className="text-[14px] font-medium text-[#0B1B33]">Connecting...</span>
                  </>
                ) : (
                  <>
@@ -354,15 +381,16 @@ function AuthPage() {
              </button>
              
              <button
+               type="button"
                onClick={handleGithub}
                disabled={googleLoading || githubLoading || loading}
-               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#DCE8F5] bg-white transition-all hover:bg-[#F5FAFF] hover:border-[#B8D3F0] active:scale-[0.96] disabled:opacity-60"
+               className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#DCE8F5] bg-white transition-all hover:bg-[#F8FAFC] hover:border-[#B8D3F0] active:scale-[0.97] disabled:opacity-60"
                aria-label="Continue with GitHub"
              >
                {githubLoading ? (
                  <>
                    <Loader2 className="h-5 w-5 animate-spin text-[#64748B]" />
-                   <span className="text-[14px] font-semibold text-[#0B1B33]">Connecting...</span>
+                   <span className="text-[14px] font-medium text-[#0B1B33]">Connecting...</span>
                  </>
                ) : (
                  <>

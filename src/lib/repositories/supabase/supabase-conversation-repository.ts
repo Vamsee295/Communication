@@ -14,6 +14,14 @@ export class SupabaseConversationRepository implements ConversationRepository {
     return id as string;
   }
 
+  async clearHistory(): Promise<void> {
+    throw new Error("Supabase driver does not support clearHistory — use Neon direct client instead.");
+  }
+
+  async deleteConversation(): Promise<void> {
+    throw new Error("Supabase driver does not support deleteConversation — use Neon direct client instead.");
+  }
+
   async keepVanishSessionAlive(conversationId: string): Promise<void> {
     throw new Error("Supabase driver does not support keepVanishSessionAlive — use Neon direct client instead.");
   }

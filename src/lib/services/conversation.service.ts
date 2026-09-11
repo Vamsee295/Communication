@@ -542,6 +542,38 @@ export class ConversationService {
     return { ok: true };
   }
 
+  async clearHistory(conversationId: string): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    } else {
+      const members = await this.conversations.listMembers([conversationId]);
+      const me = members.find((m) => m.user_id === this.userId);
+      if (!me) throw new AuthorizationError("Not a member of this conversation");
+    }
+
+    await this.conversations.clearHistory(conversationId);
+    return { ok: true };
+  }
+
+  async deleteConversation(conversationId: string): Promise<{ ok: true }> {
+    if (this.conversationPolicy) {
+      await this.conversationPolicy.requireMembership(this.userId, conversationId);
+    } else {
+      const members = await this.conversations.listMembers([conversationId]);
+      const me = members.find((m) => m.user_id === this.userId);
+      if (!me) throw new AuthorizationError("Not a member of this conversation");
+
+      const summaries = await this.conversations.getSummaries([conversationId]);
+      const summary = summaries[0];
+      if (summary && summary.kind === "group" && me.role !== "owner") {
+        throw new AuthorizationError("Only group owners can delete group conversations");
+      }
+    }
+
+    await this.conversations.deleteConversation(conversationId);
+    return { ok: true };
+  }
+
   async setDisappearingMessages(conversationId: string, enabled: boolean): Promise<{ ok: true }> {
     if (this.conversationPolicy) {
       await this.conversationPolicy.requireMembership(this.userId, conversationId);

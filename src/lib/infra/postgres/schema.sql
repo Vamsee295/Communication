@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   )
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_lower_username_idx ON public.profiles (LOWER(username));
+
 -- 4. USER ROLES
 CREATE TABLE IF NOT EXISTS public.user_roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -322,3 +324,63 @@ DROP TRIGGER IF EXISTS on_message_created ON public.messages;
 CREATE TRIGGER on_message_created
 AFTER INSERT ON public.messages
 FOR EACH ROW EXECUTE FUNCTION public.handle_new_message();
+
+-- ==============================================================================
+-- 18. E2EE SIGNAL PROTOCOL RELAY TRANSPORT (ZERO-KNOWLEDGE BUFFER)
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.e2ee_relay_devices (
+  protocol_device_id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL,
+  device_key TEXT NOT NULL,
+  device_type TEXT NOT NULL DEFAULT 'web',
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT e2ee_relay_devices_user_key UNIQUE (user_id, device_key)
+);
+CREATE INDEX IF NOT EXISTS e2ee_relay_devices_user_idx ON public.e2ee_relay_devices(user_id);
+
+CREATE TABLE IF NOT EXISTS public.e2ee_relay_identities (
+  user_id UUID NOT NULL,
+  device_id INT NOT NULL,
+  identity_type TEXT NOT NULL DEFAULT 'aci',
+  x25519_public_key TEXT NOT NULL,
+  ed25519_public_key TEXT NOT NULL,
+  registration_id INT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, device_id, identity_type)
+);
+
+CREATE TABLE IF NOT EXISTS public.e2ee_relay_prekeys (
+  user_id UUID NOT NULL,
+  device_id INT NOT NULL,
+  key_id INT NOT NULL,
+  key_type TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  signature TEXT,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, device_id, key_type, key_id)
+);
+CREATE INDEX IF NOT EXISTS e2ee_relay_prekeys_lookup_idx ON public.e2ee_relay_prekeys(user_id, device_id, consumed_at);
+
+CREATE TABLE IF NOT EXISTS public.e2ee_envelopes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  target_user_id UUID NOT NULL,
+  target_device_id INT NOT NULL,
+  sender_user_id UUID NOT NULL,
+  sender_device_id INT NOT NULL,
+  ciphertext TEXT NOT NULL,
+  message_type INT NOT NULL,
+  client_message_id TEXT,
+  urgent BOOLEAN NOT NULL DEFAULT false,
+  ephemeral BOOLEAN NOT NULL DEFAULT false,
+  client_timestamp BIGINT NOT NULL,
+  server_timestamp BIGINT NOT NULL DEFAULT (extract(epoch from now()) * 1000)::bigint,
+  delivered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS e2ee_envelopes_pending_idx ON public.e2ee_envelopes(target_device_id, delivered_at);
+

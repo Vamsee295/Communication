@@ -1,6 +1,7 @@
 import { ValidationError } from "@/lib/domain/errors";
 import type { FriendProfile, Profile } from "@/lib/domain/types";
-import type { ProfilePatch, ProfileRepository } from "@/lib/repositories/ports";
+import type { ProfilePatch, ProfileRepository, UsernameAvailabilityResult } from "@/lib/repositories/ports";
+import { normalizeUsername, validateUsername } from "@/lib/username";
 
 export class ProfileService {
   constructor(
@@ -12,8 +13,16 @@ export class ProfileService {
     return this.profiles.getById(this.userId);
   }
 
-  updateMe(patch: ProfilePatch): Promise<Profile> {
-    return this.profiles.update(this.userId, patch);
+  async updateMe(patch: ProfilePatch): Promise<Profile> {
+    const cleanedPatch: ProfilePatch = { ...patch };
+    if (patch.username !== undefined) {
+      const val = validateUsername(patch.username);
+      if (!val.valid) {
+        throw new ValidationError(val.error ?? "Invalid username");
+      }
+      cleanedPatch.username = val.normalized;
+    }
+    return this.profiles.update(this.userId, cleanedPatch);
   }
 
   searchUsers(query: string): Promise<FriendProfile[]> {
@@ -21,8 +30,8 @@ export class ProfileService {
     return this.profiles.search(query, this.userId);
   }
 
-  checkUsernameAvailability(username: string): Promise<boolean> {
-    return this.profiles.checkUsernameAvailability(username);
+  checkUsernameAvailability(username: string): Promise<UsernameAvailabilityResult> {
+    return this.profiles.checkUsernameAvailability(username, this.userId);
   }
 
   async heartbeatLastSeen(lastSeen?: string): Promise<{ ok: true }> {

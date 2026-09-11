@@ -1,5 +1,4 @@
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { lovable } from "@/integrations/lovable";
 import { supabase } from "@/integrations/supabase/client";
 import type { AuthUser } from "@/lib/domain/types";
 

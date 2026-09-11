@@ -98,4 +98,15 @@ export class CallService {
     await this.calls.deleteFromHistory(callId, this.userId);
     return { ok: true };
   }
+
+  async deleteManyFromHistory(callIds: string[]): Promise<{ ok: true; count: number }> {
+    const uniqueIds = Array.from(new Set(callIds));
+    const count = await this.calls.deleteManyFromHistory(uniqueIds, this.userId);
+    return { ok: true, count };
+  }
+
+  async clearHistory(): Promise<{ ok: true; count: number }> {
+    const count = await this.calls.clearHistory(this.userId);
+    return { ok: true, count };
+  }
 }

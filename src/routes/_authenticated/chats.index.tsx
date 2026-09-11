@@ -35,6 +35,7 @@ import {
   setConversationFlags,
   markConversationUnread,
   leaveConversation,
+  deleteConversation,
   blockContact,
   markRead,
   type ConversationSummary,
@@ -64,6 +65,7 @@ function ChatsPage() {
   const doFlags = useServerFn(setConversationFlags);
   const doUnread = useServerFn(markConversationUnread);
   const doLeave = useServerFn(leaveConversation);
+  const doDeleteConversation = useServerFn(deleteConversation);
   const doBlock = useServerFn(blockContact);
   const doMarkRead = useServerFn(markRead);
   const doCreateGroup = useServerFn(createGroupConversation);
@@ -149,9 +151,18 @@ function ChatsPage() {
   const leave = useMutation({
     mutationFn: (id: string) => doLeave({ data: { conversation_id: id } }),
     onSuccess: () => {
+      toast.success("Left group");
+      refresh();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not leave group"),
+  });
+  const deleteConv = useMutation({
+    mutationFn: (id: string) => doDeleteConversation({ data: { conversation_id: id } }),
+    onSuccess: () => {
       toast.success("Chat deleted");
       refresh();
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not delete chat"),
   });
   const block = useMutation({
     mutationFn: (userId: string) => doBlock({ data: { user_id: userId } }),
@@ -435,21 +446,28 @@ function ChatsPage() {
         <ConfirmDialog
           title={
             confirm.kind === "delete"
-              ? (confirm.conv.kind === "group" ? "Leave this group?" : "Delete this chat?")
+              ? (confirm.conv.kind === "group" ? "Leave this group?" : "Delete chat?")
               : "Block this contact?"
           }
           body={
             confirm.kind === "delete"
               ? (confirm.conv.kind === "group"
                   ? "You will leave this group conversation. You will no longer receive new messages from this group."
-                  : "The conversation is removed from your list. Messages you already sent stay with the other person.")
+                  : "This will permanently delete this conversation and its message history.")
               : "They won't be able to message or call you until you unblock them."
           }
-          action={confirm.kind === "delete" ? (confirm.conv.kind === "group" ? "Leave" : "Delete") : "Block"}
+          action={confirm.kind === "delete" ? (confirm.conv.kind === "group" ? "Leave" : "Delete Chat") : "Block"}
           onCancel={() => setConfirm(null)}
           onConfirm={() => {
-            if (confirm.kind === "delete") leave.mutate(confirm.conv.id);
-            else if (confirm.conv.other?.id) block.mutate(confirm.conv.other.id);
+            if (confirm.kind === "delete") {
+              if (confirm.conv.kind === "group") {
+                leave.mutate(confirm.conv.id);
+              } else {
+                deleteConv.mutate(confirm.conv.id);
+              }
+            } else if (confirm.conv.other?.id) {
+              block.mutate(confirm.conv.other.id);
+            }
             setConfirm(null);
           }}
         />

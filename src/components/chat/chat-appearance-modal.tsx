@@ -29,9 +29,12 @@ export function ChatAppearanceModal({ currentSettings, onClose, onSave }: ChatAp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
+      onClick={onClose}
+    >
       <div
-        className="w-full max-w-md overflow-hidden rounded-3xl border border-border bg-card shadow-2xl animate-scale-in"
+        className="w-full max-w-md overflow-hidden rounded-t-3xl sm:rounded-3xl border-t sm:border border-border bg-card shadow-2xl animate-in slide-in-from-bottom-6 duration-200 sm:animate-scale-in pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -61,4 +61,20 @@ export class DeviceService {
 
     return { ok: true, deviceId, deviceKey: revoked?.device_key };
   }
+
+  async delete(deviceId: string): Promise<{ ok: true; deleted: boolean }> {
+    const deleted = await this.devices.delete(this.userId, deviceId);
+    return { ok: true, deleted };
+  }
+
+  async deleteMany(deviceIds: string[]): Promise<{ ok: true; count: number }> {
+    const uniqueIds = Array.from(new Set(deviceIds));
+    const count = await this.devices.deleteMany(this.userId, uniqueIds);
+    return { ok: true, count };
+  }
+
+  async clearRevoked(): Promise<{ ok: true; count: number }> {
+    const count = await this.devices.clearRevoked(this.userId);
+    return { ok: true, count };
+  }
 }

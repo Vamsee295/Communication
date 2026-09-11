@@ -63,6 +63,39 @@ export class PostgresDeviceRepository implements DeviceRepository {
     `;
     return rows[0] ?? null;
   }
+
+  async delete(userId: string, deviceId: string): Promise<boolean> {
+    const rows = await this.db<Array<{ id: string }>>`
+      DELETE FROM public.devices
+       WHERE id = ${deviceId}
+         AND user_id = ${userId}
+         AND revoked_at IS NOT NULL
+      RETURNING id;
+    `;
+    return rows.length > 0;
+  }
+
+  async deleteMany(userId: string, deviceIds: string[]): Promise<number> {
+    if (deviceIds.length === 0) return 0;
+    const rows = await this.db<Array<{ id: string }>>`
+      DELETE FROM public.devices
+       WHERE id = ANY(${deviceIds})
+         AND user_id = ${userId}
+         AND revoked_at IS NOT NULL
+      RETURNING id;
+    `;
+    return rows.length;
+  }
+
+  async clearRevoked(userId: string): Promise<number> {
+    const rows = await this.db<Array<{ id: string }>>`
+      DELETE FROM public.devices
+       WHERE user_id = ${userId}
+         AND revoked_at IS NOT NULL
+      RETURNING id;
+    `;
+    return rows.length;
+  }
 }
 
 export class PostgresCallRepository implements CallRepository {
@@ -145,5 +178,25 @@ export class PostgresCallRepository implements CallRepository {
        WHERE id = ${callId}
          AND (caller_id = ${userId} OR callee_id = ${userId});
     `;
+  }
+
+  async deleteManyFromHistory(callIds: string[], userId: string): Promise<number> {
+    if (callIds.length === 0) return 0;
+    const rows = await this.db<Array<{ id: string }>>`
+      DELETE FROM public.calls
+       WHERE id = ANY(${callIds})
+         AND (caller_id = ${userId} OR callee_id = ${userId})
+      RETURNING id;
+    `;
+    return rows.length;
+  }
+
+  async clearHistory(userId: string): Promise<number> {
+    const rows = await this.db<Array<{ id: string }>>`
+      DELETE FROM public.calls
+       WHERE caller_id = ${userId} OR callee_id = ${userId}
+      RETURNING id;
+    `;
+    return rows.length;
   }
 }

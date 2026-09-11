@@ -32,6 +32,15 @@ export type ProfilePatch = {
   avatar_url?: string | null;
 };
 
+export type UsernameAvailabilityResult = {
+  available: boolean;
+  isCurrent?: boolean;
+  username: string;
+  reason?: "taken" | "invalid" | "reserved";
+  error?: string;
+  suggestions?: string[];
+};
+
 export interface ProfileRepository {
   getById(id: string): Promise<Profile | null>;
   update(id: string, patch: ProfilePatch): Promise<Profile>;
@@ -39,7 +48,7 @@ export interface ProfileRepository {
   search(query: string, excludeId: string): Promise<FriendProfile[]>;
   getChatProfiles(ids: string[]): Promise<ChatProfile[]>;
   getCallPeer(id: string): Promise<CallPeer | null>;
-  checkUsernameAvailability(username: string): Promise<boolean>;
+  checkUsernameAvailability(username: string, currentUserId?: string): Promise<UsernameAvailabilityResult>;
 }
 
 export interface FriendshipRepository {
@@ -112,6 +121,8 @@ export interface ConversationRepository {
   ): Promise<void>;
   updateLastRead(userId: string, conversationId: string, lastReadAt: string): Promise<void>;
   leave(userId: string, conversationId: string): Promise<void>;
+  clearHistory(conversationId: string): Promise<void>;
+  deleteConversation(conversationId: string): Promise<void>;
   keepVanishSessionAlive(conversationId: string): Promise<void>;
   setDisappearingMessages(conversationId: string, enabled: boolean): Promise<void>;
 }
@@ -187,6 +198,9 @@ export interface DeviceRepository {
   listForUser(userId: string): Promise<Device[]>;
   getByKey(userId: string, deviceKey: string): Promise<Device | null>;
   revoke(userId: string, deviceId: string, revokedAt: string): Promise<{ id: string; device_key: string } | null>;
+  delete(userId: string, deviceId: string): Promise<boolean>;
+  deleteMany(userId: string, deviceIds: string[]): Promise<number>;
+  clearRevoked(userId: string): Promise<number>;
 }
 
 export interface CallRepository {
@@ -209,6 +223,8 @@ export interface CallRepository {
   ): Promise<void>;
   listForUser(userId: string, limit: number): Promise<Call[]>;
   deleteFromHistory(callId: string, userId: string): Promise<void>;
+  deleteManyFromHistory(callIds: string[], userId: string): Promise<number>;
+  clearHistory(userId: string): Promise<number>;
 }
 
 export interface PrekeyRepository {
