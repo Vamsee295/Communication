@@ -29,6 +29,8 @@ export function getPostgresClient(): postgres.Sql {
 
 export type DbClient = postgres.Sql | postgres.TransactionSql;
 
+export const getDb = getPostgresClient;
+
 /**
  * Executes a callback within an isolated PostgreSQL transaction.
  */
@@ -36,3 +38,4 @@ export async function withTransaction<T>(callback: (sql: postgres.Sql) => Promis
   const sql = getPostgresClient();
   return (sql.begin as unknown as (cb: (tx: postgres.Sql) => Promise<T>) => Promise<T>)(callback);
 }
+

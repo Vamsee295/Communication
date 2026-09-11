@@ -26,6 +26,7 @@ import {
   type GroupPermissions,
   type MemberRestriction,
 } from "@/lib/chat.functions";
+import type { Attachment } from "@/lib/domain/types";
 import { listFriendships } from "@/lib/friendships.functions";
 import { toast } from "sonner";
 import {
@@ -51,6 +52,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { canPerformGroupAction } from "@/lib/auth/group-permissions";
+import { SharedMediaGallery } from "@/components/chat/shared-media-gallery";
 
 export type GroupMember = ChatProfile & { role: GroupMemberRole };
 
@@ -78,6 +80,7 @@ export function GroupInfoSheet({
   myRole,
   meId,
   onClose,
+  onOpenMedia,
 }: {
   conversationId: string;
   title: string;
@@ -88,6 +91,7 @@ export function GroupInfoSheet({
   myRole: GroupMemberRole;
   meId: string | undefined;
   onClose: () => void;
+  onOpenMedia?: (attachmentId: string, allMedia: Attachment[]) => void;
 }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -836,6 +840,20 @@ export function GroupInfoSheet({
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Shared Media Section */}
+              <div className="pt-2 border-t border-border/50">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+                  Shared Media & Files
+                </h4>
+                <SharedMediaGallery
+                  conversationId={conversationId}
+                  onOpenMedia={(id, allMedia) => {
+                    onClose();
+                    onOpenMedia?.(id, allMedia);
+                  }}
+                />
               </div>
 
               {/* Leave Group Button */}

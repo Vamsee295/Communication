@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Loader2 } from "lucide-react";
 import type { Attachment } from "@/lib/domain/types";
 import { downloadAuthenticatedAttachment } from "@/lib/authenticated-media";
@@ -21,6 +21,9 @@ export function MediaViewerModal({
   const [loading, setLoading] = useState(false);
   const [zoomed, setZoomed] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
 
   const current = attachments[index];
 
@@ -50,6 +53,30 @@ export function MediaViewerModal({
     setZoomed(false);
     setIndex((i) => Math.min(attachments.length - 1, i + 1));
   }, [attachments.length]);
+
+  // Touch swipe support for mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (zoomed) return;
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (zoomed || touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+
+    // Verify horizontal swipe intent
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      if (deltaX > 0) {
+        goPrev();
+      } else {
+        goNext();
+      }
+    }
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+  };
 
   // Keyboard navigation
   useEffect(() => {
@@ -91,10 +118,12 @@ export function MediaViewerModal({
     <div
       className="fixed inset-0 z-[100] flex flex-col bg-black/95 backdrop-blur-md select-none animate-fade-in"
       onClick={onClose}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
     >
       {/* Header */}
       <div
-        className="flex shrink-0 items-center justify-between px-4 py-3 z-20 bg-gradient-to-b from-black/70 to-transparent"
+        className="flex shrink-0 items-center justify-between px-4 py-3 z-20 bg-gradient-to-b from-black/80 to-transparent"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -111,7 +140,9 @@ export function MediaViewerModal({
             {current.original_filename}
           </p>
           {attachments.length > 1 && (
-            <p className="text-xs text-white/60 mt-0.5">{index + 1} of {attachments.length}</p>
+            <p className="text-xs text-white/70 mt-0.5">
+              {index + 1} of {attachments.length}
+            </p>
           )}
         </div>
 
@@ -280,4 +311,3 @@ export function MediaViewerModal({
     </div>
   );
 }
-

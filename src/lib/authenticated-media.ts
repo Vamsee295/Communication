@@ -120,3 +120,16 @@ export async function copyImageToClipboard(attachmentId: string): Promise<boolea
   return true;
 }
 
+/**
+ * Revoke all active Object URLs and clear the media cache (e.g. on logout or session reset).
+ */
+export function clearMediaCache(): void {
+  for (const item of mediaCache.values()) {
+    try {
+      URL.revokeObjectURL(item.objectUrl);
+    } catch {}
+  }
+  mediaCache.clear();
+  inFlightRequests.clear();
+}
+

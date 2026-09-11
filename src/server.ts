@@ -45,25 +45,98 @@ function isH3SwallowedErrorBody(body: string): boolean {
 }
 
 import { handleAttachmentApiRequest } from "./lib/attachments.api";
+import { getDb } from "./lib/infra/postgres/client";
+import { logger } from "./lib/infra/logger";
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
-    try {
-      const url = new URL(request.url);
-      if (url.pathname.startsWith("/api/attachments/")) {
-        return await handleAttachmentApiRequest(request);
-      }
+    const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
+    const url = new URL(request.url);
 
+    // 1. Health liveness probe (GET /api/health)
+    if (url.pathname === "/api/health") {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          uptime: typeof process !== "undefined" && process.uptime ? Math.floor(process.uptime()) : 0,
+          timestamp: new Date().toISOString(),
+          service: "ghostline-api",
+          version: "1.0.0",
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "x-request-id": requestId,
+            "cache-control": "no-store",
+          },
+        },
+      );
+    }
+
+    // 2. Health readiness probe (GET /api/health/ready)
+    if (url.pathname === "/api/health/ready") {
+      try {
+        const db = getDb();
+        await db.unsafe("SELECT 1;");
+        return new Response(
+          JSON.stringify({
+            status: "ok",
+            database: "connected",
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": requestId,
+              "cache-control": "no-store",
+            },
+          },
+        );
+      } catch (err) {
+        logger.error("Readiness check database failure", { requestId }, err);
+        return new Response(
+          JSON.stringify({
+            status: "degraded",
+            database: "disconnected",
+            timestamp: new Date().toISOString(),
+          }),
+          {
+            status: 503,
+            headers: {
+              "content-type": "application/json",
+              "x-request-id": requestId,
+              "cache-control": "no-store",
+            },
+          },
+        );
+      }
+    }
+
+    // 3. Authenticated Neon BYTEA Media streaming
+    if (url.pathname.startsWith("/api/attachments/")) {
+      const mediaResponse = await handleAttachmentApiRequest(request);
+      mediaResponse.headers.set("x-request-id", requestId);
+      return mediaResponse;
+    }
+
+    try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalized = await normalizeCatastrophicSsrResponse(response);
+      normalized.headers.set("x-request-id", requestId);
+      return normalized;
     } catch (error) {
-      console.error(error);
+      logger.error("Unhandled server exception during request", { requestId, path: url.pathname }, error);
       return new Response(renderErrorPage(), {
         status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "x-request-id": requestId,
+        },
       });
     }
   },
 };
+

@@ -8,6 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { getMyProfile, updateProfile } from "@/lib/profile.functions";
 import { authService } from "@/lib/auth/session";
 import { rotateDeviceKey } from "@/lib/device-key";
+import { clearMediaCache } from "@/lib/authenticated-media";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -54,6 +55,7 @@ function ProfilePage() {
   });
 
   const signOut = async () => {
+    clearMediaCache();
     rotateDeviceKey();
     await qc.cancelQueries();
     qc.clear();

@@ -11,14 +11,15 @@ import {
   Lock,
   Copy,
   Check,
-  User,
 } from "lucide-react";
 import { UserAvatar } from "@/components/user-avatar";
-import type { ChatProfile } from "@/lib/domain/types";
+import type { ChatProfile, Attachment } from "@/lib/domain/types";
 import { toast } from "sonner";
+import { SharedMediaGallery } from "./shared-media-gallery";
 
 export interface UserProfileSheetProps {
   user: ChatProfile;
+  conversationId?: string;
   isOnline: boolean;
   statusLabel: string;
   isMuted: boolean;
@@ -29,10 +30,12 @@ export interface UserProfileSheetProps {
   onToggleMute: () => void;
   onClearChat: () => void;
   onBlock: () => void;
+  onOpenMedia?: (attachmentId: string, allMedia: Attachment[]) => void;
 }
 
 export function UserProfileSheet({
   user,
+  conversationId,
   isOnline,
   statusLabel,
   isMuted,
@@ -43,6 +46,7 @@ export function UserProfileSheet({
   onToggleMute,
   onClearChat,
   onBlock,
+  onOpenMedia,
 }: UserProfileSheetProps) {
   const [copied, setCopied] = useState(false);
   const name = user.display_name ?? user.username ?? "Ghost";
@@ -165,6 +169,22 @@ export function UserProfileSheet({
             </span>
           </button>
         </div>
+
+        {/* Shared Media Section */}
+        {conversationId && (
+          <div className="py-4 border-b border-border/50">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+              Shared Media & Files
+            </h4>
+            <SharedMediaGallery
+              conversationId={conversationId}
+              onOpenMedia={(id, allMedia) => {
+                onClose();
+                onOpenMedia?.(id, allMedia);
+              }}
+            />
+          </div>
+        )}
 
         {/* Details section */}
         <div className="space-y-4 py-4">

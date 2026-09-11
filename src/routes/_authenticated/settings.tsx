@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Smartphone,
   ShieldBan,
+  ShieldCheck,
   Star,
   User,
   Info,
@@ -22,6 +23,7 @@ import {
 import { AppShell } from "@/components/app-shell";
 import { authService } from "@/lib/auth/session";
 import { rotateDeviceKey } from "@/lib/device-key";
+import { clearMediaCache } from "@/lib/authenticated-media";
 import { getVapidPublicKey, savePushSubscription, removePushSubscription } from "@/lib/chat.functions";
 import { useTheme, type ThemeMode, type AccentColor } from "@/hooks/use-theme";
 
@@ -409,6 +411,7 @@ function SettingsPage() {
   const signOut = async () => {
     await qc.cancelQueries();
     qc.clear();
+    clearMediaCache();
     rotateDeviceKey();
     await authService.signOut();
     toast.success("Signed out successfully.");

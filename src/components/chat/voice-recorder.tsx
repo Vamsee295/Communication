@@ -265,13 +265,6 @@ export function VoiceRecorder({ onSend, onCancel }: VoiceRecorderProps) {
               setHasSignal(true);
             }
 
-            // Periodic diagnostic log (every 2s)
-            const now = Date.now();
-            if (now - lastRmsLog > 2000) {
-              lastRmsLog = now;
-              console.log(`[Ghostline Audio Diagnostic] Live RMS: ${rms.toFixed(5)} (Peak: ${maxRmsRef.current.toFixed(5)}) | Signal: ${rms > 0.005 ? "ACTIVE (Voice Detected)" : "LOW / SILENT"}`);
-            }
-
             animFrameRef.current = requestAnimationFrame(updateVisualizer);
           };
 

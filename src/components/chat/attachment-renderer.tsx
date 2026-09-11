@@ -1,8 +1,24 @@
 import React, { useState, useRef, useEffect, memo } from "react";
-import { Play, Pause, Download, FileText, Archive, File, Image as ImageIcon, FileAudio, RotateCw, Loader2, Film } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Download,
+  FileText,
+  Archive,
+  File,
+  Image as ImageIcon,
+  FileAudio,
+  RotateCw,
+  Loader2,
+  Film,
+  Volume2,
+  VolumeX,
+  Maximize2,
+} from "lucide-react";
 import type { Attachment } from "@/lib/domain/types";
 import { useAuthenticatedMedia } from "@/hooks/use-authenticated-media";
 import { downloadAuthenticatedAttachment } from "@/lib/authenticated-media";
+import { toast } from "sonner";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -96,6 +112,166 @@ export const ImageAttachment = memo(function ImageAttachment({
   );
 });
 
+export const VideoAttachment = memo(function VideoAttachment({
+  attachment,
+  mine,
+  onVideoClick,
+  flush = false,
+  className = "",
+}: {
+  attachment: Attachment;
+  mine: boolean;
+  onVideoClick?: (attachmentId: string) => void;
+  flush?: boolean;
+  className?: string;
+}) {
+  const { url, loading, error, retry } = useAuthenticatedMedia(attachment.id, { autoFetch: true });
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [duration, setDuration] = useState(0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onLoaded = () => {
+      if (isFinite(v.duration) && v.duration > 0) setDuration(v.duration);
+    };
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onEnded = () => {
+      setIsPlaying(false);
+      v.currentTime = 0;
+    };
+
+    v.addEventListener("loadedmetadata", onLoaded);
+    v.addEventListener("play", onPlay);
+    v.addEventListener("pause", onPause);
+    v.addEventListener("ended", onEnded);
+
+    return () => {
+      v.removeEventListener("loadedmetadata", onLoaded);
+      v.removeEventListener("play", onPlay);
+      v.removeEventListener("pause", onPause);
+      v.removeEventListener("ended", onEnded);
+    };
+  }, [url]);
+
+  if (loading) {
+    return (
+      <div className={`flex min-h-[180px] max-h-[300px] w-full max-w-[380px] flex-col items-center justify-center gap-2.5 rounded-2xl bg-foreground/5 p-4 text-center animate-pulse ${className}`}>
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/60" />
+        <span className="text-[11px] font-medium text-muted-foreground">Loading video…</span>
+      </div>
+    );
+  }
+
+  if (error || !url) {
+    return (
+      <div className={`flex min-h-[140px] w-full max-w-[360px] flex-col items-center justify-center gap-2 rounded-2xl bg-foreground/5 p-4 text-center border border-border/40 ${className}`}>
+        <Film className="h-6 w-6 text-muted-foreground/50" />
+        <span className="text-xs font-medium text-muted-foreground">Video unavailable</span>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void retry();
+          }}
+          className="mt-1 flex items-center gap-1 rounded-full bg-background px-3 py-1 text-[11px] font-medium text-foreground shadow-sm hover:bg-muted border border-border/50 transition-colors"
+        >
+          <RotateCw className="h-3 w-3" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) {
+      v.play().catch(() => {});
+    } else {
+      v.pause();
+    }
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setIsMuted(v.muted);
+  };
+
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        onVideoClick?.(attachment.id);
+      }}
+      className={[
+        "group relative overflow-hidden rounded-2xl bg-black max-w-[380px] w-full select-none cursor-pointer shadow-sm",
+        flush ? "rounded-t-2xl" : "",
+        className,
+      ].join(" ")}
+    >
+      <video
+        ref={videoRef}
+        src={url}
+        playsInline
+        muted={isMuted}
+        preload="metadata"
+        className="block max-h-[420px] w-full object-contain rounded-inherit"
+      />
+
+      {/* Play/Pause overlay button */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <button
+          type="button"
+          onClick={togglePlay}
+          className={[
+            "pointer-events-auto grid h-12 w-12 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm shadow-lg transition-transform hover:scale-105 active:scale-95",
+            isPlaying ? "opacity-0 group-hover:opacity-100" : "opacity-100",
+          ].join(" ")}
+          aria-label={isPlaying ? "Pause video" : "Play video"}
+        >
+          {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current ml-0.5" />}
+        </button>
+      </div>
+
+      {/* Bottom control pills */}
+      <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between pointer-events-none">
+        <div className="flex items-center gap-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-medium text-white/95 backdrop-blur-sm shadow">
+          <span>{duration > 0 ? formatDuration(duration) : "Video"}</span>
+        </div>
+
+        <div className="flex items-center gap-1 pointer-events-auto">
+          <button
+            type="button"
+            onClick={toggleMute}
+            className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white/90 hover:text-white backdrop-blur-sm transition-colors"
+            aria-label={isMuted ? "Unmute video" : "Mute video"}
+          >
+            {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onVideoClick?.(attachment.id);
+            }}
+            className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white/90 hover:text-white backdrop-blur-sm transition-colors"
+            aria-label="Expand video"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export const AudioAttachment = memo(function AudioAttachment({
   attachment,
   mine,
@@ -111,6 +287,7 @@ export const AudioAttachment = memo(function AudioAttachment({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [audioError, setAudioError] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState<1 | 1.5 | 2>(1);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -185,6 +362,15 @@ export const AudioAttachment = memo(function AudioAttachment({
     }
   };
 
+  const cycleSpeed = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextRate: 1 | 1.5 | 2 = playbackRate === 1 ? 1.5 : playbackRate === 1.5 ? 2 : 1;
+    setPlaybackRate(nextRate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = nextRate;
+    }
+  };
+
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
     const audio = audioRef.current;
@@ -230,51 +416,66 @@ export const AudioAttachment = memo(function AudioAttachment({
   const displayTime = duration > 0 ? (isPlaying || progress > 0 ? formatDuration(progress) : formatDuration(duration)) : (progress > 0 ? formatDuration(progress) : "0:00");
 
   return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      className={[
-        "flex items-center gap-3 rounded-2xl px-3.5 py-2.5 w-64 sm:w-72 max-w-full select-none shadow-sm transition-colors",
-        mine ? "bg-primary text-primary-foreground" : "bg-card text-foreground border border-border/60",
-        className,
-      ].join(" ")}
-    >
-      <audio ref={audioRef} src={url} preload="auto" playsInline />
-
-      <button
-        type="button"
-        onClick={togglePlay}
+    <div className="flex flex-col gap-1.5 w-68 sm:w-76 max-w-full">
+      <div
+        onClick={(e) => e.stopPropagation()}
         className={[
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 shadow-sm",
-          mine ? "bg-white text-primary hover:bg-white/90" : "bg-primary text-primary-foreground hover:bg-primary/90",
+          "flex items-center gap-2.5 rounded-2xl px-3 py-2.5 w-full select-none shadow-sm transition-colors",
+          mine ? "bg-primary text-primary-foreground" : "bg-card text-foreground border border-border/60",
+          className,
         ].join(" ")}
-        aria-label={isPlaying ? "Pause" : "Play"}
       >
-        {isPlaying ? (
-          <Pause className="h-4 w-4 fill-current" />
-        ) : (
-          <Play className="h-4 w-4 fill-current ml-0.5" />
-        )}
-      </button>
+        <audio ref={audioRef} src={url} preload="auto" playsInline />
 
-      <div className="flex-1 cursor-pointer h-6 flex items-center group relative" onClick={handleSeek}>
-        {/* Track background */}
-        <div className={["h-1.5 w-full rounded-full overflow-hidden", mine ? "bg-white/30" : "bg-muted"].join(" ")}>
-          {/* Progress fill */}
+        <button
+          type="button"
+          onClick={togglePlay}
+          className={[
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform active:scale-95 shadow-sm",
+            mine ? "bg-white text-primary hover:bg-white/90" : "bg-primary text-primary-foreground hover:bg-primary/90",
+          ].join(" ")}
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <Pause className="h-4 w-4 fill-current" />
+          ) : (
+            <Play className="h-4 w-4 fill-current ml-0.5" />
+          )}
+        </button>
+
+        <div className="flex-1 cursor-pointer h-6 flex items-center group relative min-w-0" onClick={handleSeek}>
+          {/* Track background */}
+          <div className={["h-1.5 w-full rounded-full overflow-hidden", mine ? "bg-white/30" : "bg-muted"].join(" ")}>
+            {/* Progress fill */}
+            <div
+              className={["h-full transition-all duration-75 ease-linear", mine ? "bg-white" : "bg-primary"].join(" ")}
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          {/* Scrubber thumb */}
           <div
-            className={["h-full transition-all duration-75 ease-linear", mine ? "bg-white" : "bg-primary"].join(" ")}
-            style={{ width: `${progressPercent}%` }}
+            className={["absolute h-3 w-3 rounded-full top-1/2 -translate-y-1/2 -ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow", mine ? "bg-white" : "bg-primary"].join(" ")}
+            style={{ left: `${progressPercent}%` }}
           />
         </div>
-        {/* Scrubber thumb */}
-        <div
-          className={["absolute h-3 w-3 rounded-full top-1/2 -translate-y-1/2 -ml-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow", mine ? "bg-white" : "bg-primary"].join(" ")}
-          style={{ left: `${progressPercent}%` }}
-        />
-      </div>
 
-      <span className={["text-[11px] font-semibold shrink-0 tabular-nums min-w-[32px] text-right", mine ? "text-primary-foreground/90" : "text-muted-foreground"].join(" ")}>
-        {displayTime}
-      </span>
+        {/* Playback speed cycle */}
+        <button
+          type="button"
+          onClick={cycleSpeed}
+          className={[
+            "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold tracking-tight transition-transform active:scale-90",
+            mine ? "bg-white/20 text-white hover:bg-white/30" : "bg-muted text-muted-foreground hover:text-foreground",
+          ].join(" ")}
+          title="Change playback speed"
+        >
+          {playbackRate}×
+        </button>
+
+        <span className={["text-[11px] font-semibold shrink-0 tabular-nums min-w-[28px] text-right", mine ? "text-primary-foreground/90" : "text-muted-foreground"].join(" ")}>
+          {displayTime}
+        </span>
+      </div>
     </div>
   );
 });
@@ -366,13 +567,23 @@ export const AttachmentRenderer = memo(function AttachmentRenderer({
   if (!attachments || attachments.length === 0) return null;
 
   const imageAttachments = attachments.filter((a) => a.mime_type.startsWith("image/"));
-  const nonImageAttachments = attachments.filter((a) => !a.mime_type.startsWith("image/"));
+  const videoAttachments = attachments.filter((a) => a.mime_type.startsWith("video/"));
+  const otherAttachments = attachments.filter(
+    (a) => !a.mime_type.startsWith("image/") && !a.mime_type.startsWith("video/")
+  );
 
   return (
     <div className="flex flex-col gap-2 w-full">
-      {/* Multiple image grid */}
-      {imageAttachments.length > 1 ? (
-        <div className="grid grid-cols-2 gap-1.5 w-full max-w-[400px]">
+      {/* Multiple image gallery grid */}
+      {imageAttachments.length === 1 ? (
+        <ImageAttachment
+          key={imageAttachments[0].id}
+          attachment={imageAttachments[0]}
+          onImageClick={onImageClick}
+          flush={flush}
+        />
+      ) : imageAttachments.length === 2 ? (
+        <div className="grid grid-cols-2 gap-1.5 w-full max-w-[420px]">
           {imageAttachments.map((att) => (
             <ImageAttachment
               key={att.id}
@@ -382,17 +593,87 @@ export const AttachmentRenderer = memo(function AttachmentRenderer({
             />
           ))}
         </div>
-      ) : imageAttachments.length === 1 ? (
-        <ImageAttachment
-          key={imageAttachments[0].id}
-          attachment={imageAttachments[0]}
-          onImageClick={onImageClick}
-          flush={flush}
-        />
+      ) : imageAttachments.length === 3 ? (
+        <div className="grid grid-cols-2 gap-1.5 w-full max-w-[420px]">
+          <ImageAttachment
+            attachment={imageAttachments[0]}
+            onImageClick={onImageClick}
+            className="col-span-2 h-44 w-full object-cover"
+          />
+          <ImageAttachment
+            attachment={imageAttachments[1]}
+            onImageClick={onImageClick}
+            className="h-32 w-full object-cover"
+          />
+          <ImageAttachment
+            attachment={imageAttachments[2]}
+            onImageClick={onImageClick}
+            className="h-32 w-full object-cover"
+          />
+        </div>
+      ) : imageAttachments.length === 4 ? (
+        <div className="grid grid-cols-2 gap-1.5 w-full max-w-[420px]">
+          {imageAttachments.map((att) => (
+            <ImageAttachment
+              key={att.id}
+              attachment={att}
+              onImageClick={onImageClick}
+              className="h-32 sm:h-36 w-full object-cover"
+            />
+          ))}
+        </div>
+      ) : imageAttachments.length >= 5 ? (
+        <div className="grid grid-cols-2 gap-1.5 w-full max-w-[420px]">
+          <ImageAttachment
+            attachment={imageAttachments[0]}
+            onImageClick={onImageClick}
+            className="h-32 w-full object-cover"
+          />
+          <ImageAttachment
+            attachment={imageAttachments[1]}
+            onImageClick={onImageClick}
+            className="h-32 w-full object-cover"
+          />
+          <ImageAttachment
+            attachment={imageAttachments[2]}
+            onImageClick={onImageClick}
+            className="h-32 w-full object-cover"
+          />
+          {/* 4th thumbnail with +N overlay */}
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onImageClick?.(imageAttachments[3].id);
+            }}
+            className="relative h-32 w-full cursor-pointer overflow-hidden rounded-2xl group"
+          >
+            <ImageAttachment
+              attachment={imageAttachments[3]}
+              onImageClick={onImageClick}
+              className="h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs transition-opacity group-hover:bg-black/70">
+              <span className="text-lg font-bold text-white tracking-wide">
+                +{imageAttachments.length - 3}
+              </span>
+            </div>
+          </div>
+        </div>
       ) : null}
 
-      {/* Non-image items (audio / files) */}
-      {nonImageAttachments.map((att) => {
+      {/* Video attachments */}
+      {videoAttachments.map((att) => (
+        <VideoAttachment
+          key={att.id}
+          attachment={att}
+          mine={mine}
+          onVideoClick={onImageClick}
+          flush={flush}
+        />
+      ))}
+
+      {/* Audio / Documents */}
+      {otherAttachments.map((att) => {
         if (att.mime_type.startsWith("audio/")) {
           return <AudioAttachment key={att.id} attachment={att} mine={mine} />;
         }
@@ -401,4 +682,3 @@ export const AttachmentRenderer = memo(function AttachmentRenderer({
     </div>
   );
 });
-

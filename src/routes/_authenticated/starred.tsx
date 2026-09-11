@@ -68,6 +68,7 @@ function StarredPage() {
                           navigate({
                             to: "/chats/$conversationId",
                             params: { conversationId: item.message.conversation_id },
+                            search: { jumpToMsg: item.message.id },
                           })
                         }
                         className="rounded-full border border-border px-3 py-1 text-[11px] font-semibold hover:bg-secondary/70"

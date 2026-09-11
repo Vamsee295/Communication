@@ -176,19 +176,32 @@ export async function handleAttachmentApiRequest(request: Request): Promise<Resp
         });
       }
 
-      if (!att.file_data) {
-        return new Response(JSON.stringify({ error: "Attachment binary data missing" }), {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
+      const etag = `W/"${attachmentId}-${att.status}"`;
+      const ifNoneMatch = request.headers.get("if-none-match");
+      if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch.includes(attachmentId))) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            "ETag": etag,
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+          },
         });
       }
 
-      return new Response(att.file_data, {
+      const fileData = att.file_data;
+      const contentLength = fileData ? (fileData.byteLength || fileData.length || 0).toString() : "0";
+
+      return new Response(fileData, {
         status: 200,
         headers: {
           "Content-Type": att.mime_type || "application/octet-stream",
+          "Content-Length": contentLength,
+          "ETag": etag,
           "Cache-Control": "private, max-age=31536000, immutable",
           "Content-Disposition": `inline; filename="${encodeURIComponent(att.original_filename || "attachment")}"`,
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "DENY",
         },
       });
     } catch (err) {

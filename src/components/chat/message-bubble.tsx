@@ -1,7 +1,30 @@
-import React, { memo } from "react";
-import { Forward, Pin, Star, Check, CheckCheck } from "lucide-react";
+import React, { memo, useState, useRef } from "react";
+import {
+  Forward,
+  Pin,
+  Star,
+  Check,
+  CheckCheck,
+  User,
+  MapPin,
+  ExternalLink,
+  Reply,
+} from "lucide-react";
 import type { Attachment } from "@/lib/domain/types";
 import { AttachmentRenderer, AudioAttachment, FileAttachment } from "./attachment-renderer";
+import { LinkPreviewCard } from "./link-preview-card";
+import { extractUrls } from "@/lib/link-preview.functions";
+import { parseStickerMessage } from "@/lib/stickers";
+import { parseGifMessage } from "./gif-picker";
+import { parseContactMessage } from "./contact-picker-modal";
+import { parseLocationMessage } from "./location-picker-modal";
+
+export interface ParentMessageInfo {
+  id: string;
+  body: string;
+  sender_name?: string;
+  media_type?: "image" | "video" | "audio" | "file";
+}
 
 export interface MessageBubbleProps {
   id: string;
@@ -23,13 +46,16 @@ export interface MessageBubbleProps {
   failed?: boolean;
   receipt?: { delivered_at?: string | null; read_at?: string | null };
   reactions: Array<{ emoji: string; count: number; mine: boolean }>;
-  parent?: { id: string; body: string } | null;
+  parent?: ParentMessageInfo | null;
   attachments?: Attachment[];
+  themeClass?: string;
   onToggleSelect: (id: string) => void;
   onOpenMenu: (e: React.MouseEvent | React.TouchEvent, msgId: string) => void;
   onImageClick?: (attachmentId: string) => void;
   onScrollToParent?: (parentId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
+  onViewContact?: (userId: string) => void;
+  onSwipeReply?: (msg: any) => void;
   bubbleRef?: (el: HTMLLIElement | null) => void;
   longPressProps?: Record<string, any>;
 }
@@ -54,20 +80,62 @@ export const MessageBubble = memo(function MessageBubble({
   reactions,
   parent,
   attachments,
+  themeClass,
   onToggleSelect,
   onOpenMenu,
   onImageClick,
   onScrollToParent,
   onReact,
+  onViewContact,
+  onSwipeReply,
   bubbleRef,
   longPressProps,
 }: MessageBubbleProps) {
   const formattedTime = new Date(created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  // Swipe to reply touch gesture
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    longPressProps?.onTouchStart?.(e);
+    if (!selectMode && onSwipeReply) {
+      setTouchStartX(e.touches[0].clientX);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    longPressProps?.onTouchMove?.(e);
+    if (touchStartX !== null && onSwipeReply) {
+      const currentX = e.touches[0].clientX;
+      const diff = currentX - touchStartX;
+      // Only allow swiping right
+      if (diff > 0 && diff < 80) {
+        setSwipeOffset(diff);
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    longPressProps?.onTouchEnd?.(e);
+    if (swipeOffset > 45 && onSwipeReply) {
+      onSwipeReply({ id, body, sender_id: mine ? "me" : "other" });
+    }
+    setTouchStartX(null);
+    setSwipeOffset(0);
+  };
+
   const hasAttachments = Boolean(attachments && attachments.length > 0);
   const isPureImage = hasAttachments && attachments!.every((a) => a.mime_type.startsWith("image/")) && !body && !parent && !forwarded_from_id;
   const isPureAudio = hasAttachments && attachments!.length === 1 && attachments![0].mime_type.startsWith("audio/") && !body && !parent && !forwarded_from_id;
   const isPureFile = hasAttachments && attachments!.length === 1 && !attachments![0].mime_type.startsWith("image/") && !attachments![0].mime_type.startsWith("audio/") && !body && !parent && !forwarded_from_id;
+
+  // Rich message entities
+  const sticker = parseStickerMessage(body);
+  const gif = parseGifMessage(body);
+  const contact = parseContactMessage(body);
+  const location = parseLocationMessage(body);
+  const urls = extractUrls(body);
 
   const renderStatus = (theme: "bubble" | "overlay" | "subtle") => {
     const isOverlay = theme === "overlay";
@@ -109,20 +177,183 @@ export const MessageBubble = memo(function MessageBubble({
     <li
       ref={bubbleRef}
       className={[
-        "flex overflow-hidden transition-all duration-[260ms] ease-out",
+        "relative flex overflow-hidden transition-all duration-[260ms] ease-out",
         mine ? "justify-end" : "justify-start",
         grouped ? "mt-0.5" : "mt-2",
         removing ? "max-h-0 -translate-y-1 scale-95 opacity-0" : "max-h-none opacity-100",
         isSelected ? "bg-primary/10 rounded-2xl p-1" : "",
       ].join(" ")}
+      style={{
+        transform: swipeOffset > 0 ? `translateX(${swipeOffset}px)` : undefined,
+      }}
     >
+      {/* Swipe to reply icon indicator */}
+      {swipeOffset > 20 && (
+        <div className="absolute left-1 top-1/2 -translate-y-1/2 flex items-center gap-1 text-primary">
+          <Reply className="h-4 w-4 animate-pulse" />
+        </div>
+      )}
+
       <div className={["flex max-w-[85%] sm:max-w-[75%] flex-col gap-0.5", mine ? "items-end" : "items-start"].join(" ")}>
-        {/* ── Case 1: Pure Image Message ──────────────────────────────── */}
-        {isPureImage ? (
+        {/* ── Case 1: Sticker Message (Clean, Bubble-less) ────────────── */}
+        {sticker ? (
           <div
             onClick={() => selectMode && onToggleSelect(id)}
             onContextMenu={(e) => onOpenMenu(e, id)}
-            {...longPressProps}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className={[
+              "relative cursor-pointer select-none p-1 transition-transform active:scale-95",
+              pending ? "opacity-60" : "",
+              failed ? "opacity-60 ring-2 ring-destructive rounded-2xl" : "",
+              isSearchHit ? "ring-2 ring-primary rounded-2xl" : "",
+            ].join(" ")}
+          >
+            <img
+              src={sticker.url}
+              alt={sticker.name}
+              className="h-32 w-32 object-contain pointer-events-none drop-shadow-md"
+            />
+            {renderStatus("subtle")}
+          </div>
+        ) : gif ? (
+          /* ── Case 2: Animated GIF Message ───────────────────────────── */
+          <div
+            onClick={() => selectMode && onToggleSelect(id)}
+            onContextMenu={(e) => onOpenMenu(e, id)}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className={[
+              "relative cursor-pointer select-none rounded-2xl overflow-hidden shadow-sm max-w-[320px] bg-muted/40",
+              mine ? "rounded-br-md" : "rounded-bl-md",
+              pending ? "opacity-60" : "",
+              failed ? "opacity-60 ring-2 ring-destructive" : "",
+              isSearchHit ? "ring-2 ring-primary" : "",
+            ].join(" ")}
+          >
+            <img
+              src={gif.url}
+              alt={gif.title}
+              loading="lazy"
+              className="max-h-64 w-full object-cover"
+            />
+            {renderStatus("overlay")}
+          </div>
+        ) : contact ? (
+          /* ── Case 3: Contact Card Message ───────────────────────────── */
+          <div
+            onClick={() => selectMode && onToggleSelect(id)}
+            onContextMenu={(e) => onOpenMenu(e, id)}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className={[
+              "cursor-default select-none rounded-3xl p-3.5 shadow transition-all w-64 max-w-full border",
+              mine
+                ? "bg-primary text-primary-foreground border-primary-foreground/20 rounded-br-md"
+                : "glass border-border/60 rounded-bl-md",
+              pending ? "opacity-60" : "",
+              failed ? "opacity-60 ring-1 ring-destructive" : "",
+              isSearchHit ? "ring-2 ring-primary" : "",
+            ].join(" ")}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={[
+                  "grid h-11 w-11 shrink-0 place-items-center rounded-full font-bold text-base shadow-sm",
+                  mine ? "bg-white text-primary" : "bg-primary/10 text-primary",
+                ].join(" ")}
+              >
+                {contact.displayName.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="truncate text-xs font-bold leading-tight">{contact.displayName}</span>
+                <span className={["truncate text-[11px]", mine ? "opacity-80" : "text-muted-foreground"].join(" ")}>
+                  @{contact.username}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewContact?.(contact.userId);
+              }}
+              className={[
+                "mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-xl text-xs font-semibold shadow-sm transition active:scale-[0.99]",
+                mine
+                  ? "bg-white/20 text-white hover:bg-white/30"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90",
+              ].join(" ")}
+            >
+              <User className="h-3.5 w-3.5" /> View Profile
+            </button>
+            {renderStatus("bubble")}
+          </div>
+        ) : location ? (
+          /* ── Case 4: Location Card Message ───────────────────────────── */
+          <div
+            onClick={() => selectMode && onToggleSelect(id)}
+            onContextMenu={(e) => onOpenMenu(e, id)}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            className={[
+              "cursor-default select-none rounded-3xl p-3.5 shadow transition-all w-64 max-w-full border",
+              mine
+                ? "bg-primary text-primary-foreground border-primary-foreground/20 rounded-br-md"
+                : "glass border-border/60 rounded-bl-md",
+              pending ? "opacity-60" : "",
+              failed ? "opacity-60 ring-1 ring-destructive" : "",
+              isSearchHit ? "ring-2 ring-primary" : "",
+            ].join(" ")}
+          >
+            <div className="flex items-center gap-2.5">
+              <div
+                className={[
+                  "grid h-10 w-10 shrink-0 place-items-center rounded-2xl shadow-sm",
+                  mine ? "bg-white text-rose-500" : "bg-rose-500/10 text-rose-500",
+                ].join(" ")}
+              >
+                <MapPin className="h-5 w-5" />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="truncate text-xs font-bold leading-tight">
+                  {location.label || "Shared Location"}
+                </span>
+                <span className={["truncate text-[10px] font-mono", mine ? "opacity-80" : "text-muted-foreground"].join(" ")}>
+                  {location.latitude.toFixed(4)}°, {location.longitude.toFixed(4)}°
+                </span>
+              </div>
+            </div>
+
+            <a
+              href={`https://maps.google.com/?q=${location.latitude},${location.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={[
+                "mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-xl text-xs font-semibold shadow-sm transition active:scale-[0.99]",
+                mine
+                  ? "bg-white/20 text-white hover:bg-white/30"
+                  : "bg-primary text-primary-foreground hover:bg-primary/90",
+              ].join(" ")}
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Open in Maps
+            </a>
+            {renderStatus("bubble")}
+          </div>
+        ) : isPureImage ? (
+          /* ── Case 5: Pure Image Message ──────────────────────────────── */
+          <div
+            onClick={() => selectMode && onToggleSelect(id)}
+            onContextMenu={(e) => onOpenMenu(e, id)}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className={[
               "relative cursor-pointer select-none rounded-2xl overflow-hidden shadow-sm transition-all",
               mine ? "rounded-br-md" : "rounded-bl-md",
@@ -139,11 +370,13 @@ export const MessageBubble = memo(function MessageBubble({
             {renderStatus("overlay")}
           </div>
         ) : isPureAudio ? (
-          /* ── Case 2: Pure Audio Message ──────────────────────────────── */
+          /* ── Case 6: Pure Audio Message ──────────────────────────────── */
           <div
             onClick={() => selectMode && onToggleSelect(id)}
             onContextMenu={(e) => onOpenMenu(e, id)}
-            {...longPressProps}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className={[
               "relative cursor-default select-none rounded-2xl transition-all",
               mine ? "rounded-br-md" : "rounded-bl-md",
@@ -160,11 +393,13 @@ export const MessageBubble = memo(function MessageBubble({
             {renderStatus("subtle")}
           </div>
         ) : isPureFile ? (
-          /* ── Case 3: Pure File Message ───────────────────────────────── */
+          /* ── Case 7: Pure File Message ───────────────────────────────── */
           <div
             onClick={() => selectMode && onToggleSelect(id)}
             onContextMenu={(e) => onOpenMenu(e, id)}
-            {...longPressProps}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className={[
               "relative cursor-default select-none rounded-2xl transition-all",
               mine ? "rounded-br-md" : "rounded-bl-md",
@@ -181,20 +416,21 @@ export const MessageBubble = memo(function MessageBubble({
             {renderStatus("subtle")}
           </div>
         ) : hasAttachments ? (
-          /* ── Case 4: Mixed Message (Media + Caption/Reply) ──────────── */
+          /* ── Case 8: Mixed Message (Media + Caption/Reply) ──────────── */
           <div
             onClick={() => selectMode && onToggleSelect(id)}
             onContextMenu={(e) => onOpenMenu(e, id)}
-            {...longPressProps}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className={[
               "cursor-default select-none rounded-2xl overflow-hidden text-sm leading-snug shadow transition-all",
-              mine ? "bg-primary text-primary-foreground rounded-br-md" : "glass rounded-bl-md",
+              mine ? (themeClass || "bg-primary text-primary-foreground") + " rounded-br-md" : "glass rounded-bl-md",
               pending ? "opacity-60" : "",
               failed ? "opacity-60 ring-1 ring-destructive" : "",
               isSearchHit ? "ring-2 ring-primary" : "",
             ].join(" ")}
           >
-            {/* Flush media on top */}
             <div className="w-full">
               <AttachmentRenderer
                 attachments={attachments!}
@@ -204,7 +440,6 @@ export const MessageBubble = memo(function MessageBubble({
               />
             </div>
 
-            {/* Content section below media */}
             <div className="px-3.5 pt-2 pb-2">
               {forwarded_from_id && (
                 <p className={["mb-1 flex items-center gap-1 text-[10px] italic", mine ? "opacity-80" : "text-muted-foreground"].join(" ")}>
@@ -220,27 +455,46 @@ export const MessageBubble = memo(function MessageBubble({
                     onScrollToParent?.(parent.id);
                   }}
                   className={[
-                    "mb-1.5 block w-full rounded-lg border-l-2 px-2 py-1 text-left text-[11px]",
-                    mine ? "border-primary-foreground/60 bg-primary-foreground/10" : "border-primary bg-foreground/5",
+                    "mb-1.5 block w-full rounded-lg border-l-2 px-2.5 py-1 text-left text-[11px] transition hover:opacity-90 active:scale-[0.99]",
+                    mine ? "border-primary-foreground/70 bg-primary-foreground/15 text-primary-foreground" : "border-primary bg-foreground/5 text-foreground",
                   ].join(" ")}
                 >
-                  <p className="line-clamp-2">{parent.body}</p>
+                  {parent.sender_name && (
+                    <p className={["font-semibold truncate text-[10px] mb-0.5", mine ? "text-primary-foreground" : "text-primary"].join(" ")}>
+                      ↩ {parent.sender_name}
+                    </p>
+                  )}
+                  <p className="line-clamp-2 opacity-90">
+                    {parent.body || (parent.media_type ? `📎 ${parent.media_type}` : "Attachment")}
+                  </p>
                 </button>
               )}
 
               {body && <p className="whitespace-pre-wrap break-words">{body}</p>}
+
+              {/* Link Previews */}
+              {urls.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  {urls.map((u) => (
+                    <LinkPreviewCard key={u} url={u} mine={mine} />
+                  ))}
+                </div>
+              )}
+
               {renderStatus("bubble")}
             </div>
           </div>
         ) : (
-          /* ── Case 5: Standard Text-only Message ──────────────────────── */
+          /* ── Case 9: Standard Text-only Message ──────────────────────── */
           <div
             onClick={() => selectMode && onToggleSelect(id)}
             onContextMenu={(e) => onOpenMenu(e, id)}
-            {...longPressProps}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             className={[
               "cursor-default select-none rounded-2xl px-3.5 py-2 text-sm leading-snug shadow transition-all",
-              mine ? "bg-primary text-primary-foreground rounded-br-md" : "glass rounded-bl-md",
+              mine ? (themeClass || "bg-primary text-primary-foreground") + " rounded-br-md" : "glass rounded-bl-md",
               pending ? "opacity-60" : "",
               failed ? "opacity-60 ring-1 ring-destructive" : "",
               isSearchHit ? "ring-2 ring-primary" : "",
@@ -260,15 +514,32 @@ export const MessageBubble = memo(function MessageBubble({
                   onScrollToParent?.(parent.id);
                 }}
                 className={[
-                  "mb-1.5 block w-full rounded-lg border-l-2 px-2 py-1 text-left text-[11px]",
-                  mine ? "border-primary-foreground/60 bg-primary-foreground/10" : "border-primary bg-foreground/5",
+                  "mb-1.5 block w-full rounded-lg border-l-2 px-2.5 py-1 text-left text-[11px] transition hover:opacity-90 active:scale-[0.99]",
+                  mine ? "border-primary-foreground/70 bg-primary-foreground/15 text-primary-foreground" : "border-primary bg-foreground/5 text-foreground",
                 ].join(" ")}
               >
-                <p className="line-clamp-2">{parent.body}</p>
+                {parent.sender_name && (
+                  <p className={["font-semibold truncate text-[10px] mb-0.5", mine ? "text-primary-foreground" : "text-primary"].join(" ")}>
+                    ↩ {parent.sender_name}
+                  </p>
+                )}
+                <p className="line-clamp-2 opacity-90">
+                  {parent.body || (parent.media_type ? `📎 ${parent.media_type}` : "Attachment")}
+                </p>
               </button>
             )}
 
             <p className="whitespace-pre-wrap break-words">{body}</p>
+
+            {/* Link Previews */}
+            {urls.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {urls.map((u) => (
+                  <LinkPreviewCard key={u} url={u} mine={mine} />
+                ))}
+              </div>
+            )}
+
             {renderStatus("bubble")}
           </div>
         )}
@@ -295,4 +566,3 @@ export const MessageBubble = memo(function MessageBubble({
     </li>
   );
 });
-

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Camera, FlipHorizontal, RotateCcw, Send } from "lucide-react";
 
 interface CameraCaptureModalProps {
-  onCapture: (file: File) => void;
+  onCapture: (file: File, caption?: string) => void;
   onClose: () => void;
 }
 
@@ -17,6 +17,7 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [capturedFile, setCapturedFile] = useState<File | null>(null);
+  const [caption, setCaption] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
 
@@ -26,7 +27,7 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: mode, width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: false,
       });
       streamRef.current = stream;
@@ -68,8 +69,8 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     if (facingMode === "user") {
@@ -97,23 +98,25 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
     setCapturedFile(null);
+    setCaption("");
     setPhase("viewfinder");
     startStream(facingMode);
   };
 
   const sendPhoto = () => {
     if (!capturedFile) return;
-    onCapture(capturedFile);
+    onCapture(capturedFile, caption.trim() || undefined);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   };
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black">
       {/* Header */}
-      <div className="flex shrink-0 items-center justify-between px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between px-4 py-3 z-10 bg-gradient-to-b from-black/80 to-transparent">
         <button
+          type="button"
           onClick={onClose}
-          className="grid h-10 w-10 place-items-center rounded-full text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+          className="grid h-10 w-10 place-items-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors"
           aria-label="Close camera"
         >
           <X className="h-5 w-5" />
@@ -123,8 +126,9 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
         </h2>
         {phase === "viewfinder" && hasMultipleCameras ? (
           <button
+            type="button"
             onClick={flipCamera}
-            className="grid h-10 w-10 place-items-center rounded-full text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            className="grid h-10 w-10 place-items-center rounded-full text-white/80 hover:text-white hover:bg-white/15 transition-colors"
             aria-label="Flip camera"
           >
             <FlipHorizontal className="h-5 w-5" />
@@ -142,8 +146,9 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
             <Camera className="h-10 w-10 text-white/40" />
             <p className="text-sm text-white/70">{error}</p>
             <button
+              type="button"
               onClick={() => startStream(facingMode)}
-              className="mt-2 rounded-full bg-white/20 px-4 py-2 text-sm text-white hover:bg-white/30 transition-colors"
+              className="mt-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white hover:bg-white/30 transition-colors"
             >
               Retry
             </button>
@@ -166,7 +171,7 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
           <img
             src={previewUrl}
             alt="Captured photo preview"
-            className="max-h-full max-w-full object-contain"
+            className="max-h-full max-w-full object-contain select-none"
           />
         )}
 
@@ -174,45 +179,55 @@ export function CameraCaptureModal({ onCapture, onClose }: CameraCaptureModalPro
         <canvas ref={canvasRef} className="hidden" aria-hidden />
       </div>
 
-      {/* Controls */}
-      <div className="shrink-0 pb-[max(2rem,env(safe-area-inset-bottom))] pt-4">
+      {/* Controls & Optional Caption */}
+      <div className="shrink-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-3 px-4 z-10 bg-gradient-to-t from-black/80 to-transparent">
         {phase === "viewfinder" ? (
-          <div className="flex items-center justify-center">
+          <div className="flex items-center justify-center py-2">
             {/* Capture button */}
             <button
+              type="button"
               onClick={capturePhoto}
               disabled={!!error}
-              className="relative flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/20 hover:bg-white/30 disabled:opacity-40 transition-all active:scale-95"
+              className="relative flex h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-white/20 hover:bg-white/30 disabled:opacity-40 transition-all active:scale-95 shadow-lg"
               aria-label="Take photo"
             >
               <div className="h-10 w-10 rounded-full bg-white" />
             </button>
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-12">
-            {/* Retake */}
-            <button
-              onClick={retake}
-              className="flex flex-col items-center gap-1.5"
-              aria-label="Retake photo"
-            >
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-white/20 text-white hover:bg-white/30 transition-colors">
-                <RotateCcw className="h-5 w-5" />
-              </div>
-              <span className="text-[11px] text-white/70">Retake</span>
-            </button>
+          <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
+            {/* Caption input */}
+            <input
+              type="text"
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              placeholder="Add a caption..."
+              className="w-full rounded-2xl bg-white/15 px-4 py-2 text-sm text-white placeholder:text-white/50 border border-white/20 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
 
-            {/* Send */}
-            <button
-              onClick={sendPhoto}
-              className="flex flex-col items-center gap-1.5"
-              aria-label="Send photo"
-            >
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground hover:opacity-90 transition-opacity shadow-lg">
-                <Send className="h-5 w-5" />
-              </div>
-              <span className="text-[11px] text-white/70">Send</span>
-            </button>
+            <div className="flex items-center justify-between px-6 pt-1">
+              {/* Retake */}
+              <button
+                type="button"
+                onClick={retake}
+                className="flex items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-xs font-semibold text-white hover:bg-white/30 transition-colors"
+                aria-label="Retake photo"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span>Retake</span>
+              </button>
+
+              {/* Send */}
+              <button
+                type="button"
+                onClick={sendPhoto}
+                className="flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 shadow-lg transition-opacity"
+                aria-label="Send photo"
+              >
+                <span>Send</span>
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         )}
       </div>

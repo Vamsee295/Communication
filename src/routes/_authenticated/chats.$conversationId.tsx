@@ -54,12 +54,30 @@ import {
   FileText,
   Download,
   Image as ImageIcon,
+  Sparkles,
+  Palette,
+  MapPin,
+  Languages,
 } from "lucide-react";
 import {
   downloadAuthenticatedAttachment,
   copyImageToClipboard,
   getAuthenticatedAttachment,
 } from "@/lib/authenticated-media";
+import { optimizeImageBeforeUpload } from "@/lib/image-optimizer";
+import type { Attachment } from "@/lib/domain/types";
+import { ContactPickerModal, formatContactPayload } from "@/components/chat/contact-picker-modal";
+import { LocationPickerModal, formatLocationPayload } from "@/components/chat/location-picker-modal";
+import { ChatAppearanceModal } from "@/components/chat/chat-appearance-modal";
+import {
+  CHAT_THEMES,
+  CHAT_WALLPAPERS,
+  getConversationAppearance,
+  saveConversationAppearance,
+  type ChatAppearanceSettings,
+} from "@/lib/chat-themes";
+import { formatStickerPayload, type Sticker } from "@/lib/stickers";
+import { formatGifPayload, type GifItem } from "@/components/chat/gif-picker";
 import {
   getConversation,
   listMessages,
@@ -109,6 +127,9 @@ import { useVanishMode } from "@/hooks/use-vanish-mode";
 import { EphemeralMessageBubble } from "@/components/chat/ephemeral-message-bubble";
 
 export const Route = createFileRoute("/_authenticated/chats/$conversationId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    jumpToMsg: typeof search.jumpToMsg === "string" ? search.jumpToMsg : undefined,
+  }),
   component: ChatRoom,
 });
 
@@ -195,8 +216,9 @@ function ChatRoom() {
     staleTime: 30_000,
   });
 
+  const searchParams = Route.useSearch();
   const [optimistic, setOptimistic] = useState<OptimisticMsg[]>([]);
-  const [typingOther, setTypingOther] = useState<number | null>(null);
+  const [typingUsers, setTypingUsers] = useState<Map<string, { name: string; at: number }>>(new Map());
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const [locallyGone, setLocallyGone] = useState<Set<string>>(new Set());
@@ -220,6 +242,12 @@ function ChatRoom() {
   const [showProfile, setShowProfile] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"clear" | "block" | "leave" | null>(null);
 
+  // ── Scroll & Unread state ───────────────────────────────────────────────
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
+  const [newBelowCount, setNewBelowCount] = useState(0);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
+
   // ── Attachment / media state ──────────────────────────────────────────────
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
@@ -227,23 +255,67 @@ function ChatRoom() {
   const [stagedFiles, setStagedFiles] = useState<StagedFile[]>([]);
   const [attachCaption, setAttachCaption] = useState("");
   const [isSendingAttachment, setIsSendingAttachment] = useState(false);
-  const [mediaViewer, setMediaViewer] = useState<{ messageId: string; index: number } | null>(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  // ── Pin panel state ───────────────────────────────────────────────────────
+  const [mediaViewer, setMediaViewer] = useState<{ messageId?: string; attachments?: Attachment[]; index: number } | null>(null);
   const [activePinIndex, setActivePinIndex] = useState(0);
   const [pinPanelOpen, setPinPanelOpen] = useState(false);
+
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showContactPicker, setShowContactPicker] = useState(false);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [showAppearanceModal, setShowAppearanceModal] = useState(false);
+  const [appearanceSettings, setAppearanceSettings] = useState<ChatAppearanceSettings>(() =>
+    getConversationAppearance(conversationId)
+  );
+  const [viewContactUserId, setViewContactUserId] = useState<string | null>(null);
 
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const keyboardInset = useKeyboardInset();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const bubbleRefs = useRef<Map<string, HTMLLIElement>>(new Map());
 
+  const handleJumpToMessage = (messageId: string) => {
+    const el = bubbleRefs.current.get(messageId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-primary", "ring-offset-2");
+      setTimeout(() => el.classList.remove("ring-2", "ring-primary", "ring-offset-2"), 2500);
+    }
+  };
+
   const meId = me.data?.id;
   const otherId = conv.data?.other?.id;
+  const otherProfile = conv.data?.other ?? null;
   const { setActiveConversationId, isUserOnline, getUserStatusLabel } = usePresence();
   const { startCall } = useCalls();
 
-  const isGroup = conv.data?.conversation.kind === "group";
+  // ── Desktop Keyboard Shortcuts (Ctrl/Cmd+K, Ctrl/Cmd+Shift+F, ArrowUp) ────
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchQ("");
+        setSearchHits([]);
+        setSearchOpen(true);
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault();
+        setSearchQ("");
+        setSearchHits([]);
+        setSearchOpen(true);
+      } else if (e.key === "Escape") {
+        setSearchOpen(false);
+        setShowAttachMenu(false);
+        setShowEmojiPicker(false);
+        setShowContactPicker(false);
+        setShowLocationPicker(false);
+        setShowAppearanceModal(false);
+        setMenu(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const isGroup = conv.data?.conversation?.kind === "group";
   const isMuted = Boolean(conv.data?.my_flags?.muted);
   const isArchived = Boolean(conv.data?.my_flags?.archived);
 
@@ -463,7 +535,7 @@ function ChatRoom() {
     touchHandlers,
   } = useVanishMode({
     conversationId,
-    disappearingMessagesEnabled: Boolean(conv.data?.conversation.disappearing_messages_enabled),
+    disappearingMessagesEnabled: Boolean(conv.data?.conversation?.disappearing_messages_enabled),
   });
   // ────────────────────────────────────────────────────────────────────────
 
@@ -569,8 +641,20 @@ function ChatRoom() {
         },
       )
       .on("broadcast", { event: "typing" }, (payload) => {
-        const uid = (payload.payload as { user_id?: string })?.user_id;
-        if (uid && uid !== meId) setTypingOther(Date.now());
+        const p = payload.payload as { user_id?: string; name?: string; typing?: boolean };
+        if (!p.user_id || p.user_id === meId) return;
+        setTypingUsers((prev) => {
+          const next = new Map(prev);
+          if (p.typing === false) {
+            next.delete(p.user_id!);
+          } else {
+            next.set(p.user_id!, {
+              name: p.name || conv.data?.members.find((mb) => mb.id === p.user_id)?.display_name || otherProfile?.display_name || "Someone",
+              at: Date.now(),
+            });
+          }
+          return next;
+        });
       })
       // Vanish Mode uses Postgres changes on the conversation row now
       // ────────────────────────────────────────────────────────────────────────
@@ -596,19 +680,133 @@ function ChatRoom() {
       setChannelReady(false);
       supabase.removeChannel(channel);
     };
-  }, [conversationId, meId, qc, collapseAndForget]);
+  }, [conversationId, meId, qc, collapseAndForget, conv.data?.members, otherProfile?.display_name]);
 
+  // Clean up stale typing indicators (after 3.5s of silence)
   useEffect(() => {
-    if (!typingOther) return;
-    const t = setTimeout(() => setTypingOther(null), 3000);
-    return () => clearTimeout(t);
-  }, [typingOther]);
+    if (typingUsers.size === 0) return;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setTypingUsers((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [uid, item] of next.entries()) {
+          if (now - item.at > 3500) {
+            next.delete(uid);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [typingUsers.size]);
 
+  // Format typing indicator label
+  const typingLabel = useMemo(() => {
+    const names = Array.from(typingUsers.values()).map((u) => u.name);
+    if (names.length === 0) return null;
+    if (!isGroup) return "typing...";
+    if (names.length === 1) return `${names[0]} is typing...`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+    return "Several people are typing...";
+  }, [typingUsers, isGroup]);
+
+  // Auto-scroll on initial load or non-scrolled state
   useEffect(() => {
     const el = scrollerRef.current;
-    if (!el || searchOpen) return;
+    if (!el || searchOpen || isScrolledUp) return;
     el.scrollTop = el.scrollHeight;
-  }, [rendered.length, searchOpen]);
+  }, [rendered.length, searchOpen, isScrolledUp]);
+
+  // Unread messages calculation
+  const myLastReadAt = useMemo(() => {
+    const myMember = conv.data?.members.find((mb) => mb.id === meId);
+    return myMember?.last_read_at ?? null;
+  }, [conv.data?.members, meId]);
+
+  const firstUnreadMsgId = useMemo(() => {
+    if (!myLastReadAt) return null;
+    const lastReadDate = new Date(myLastReadAt).getTime();
+    const unreadMsg = rendered.find(
+      (m) => m.sender_id !== meId && new Date(m.created_at).getTime() > lastReadDate,
+    );
+    return unreadMsg?.id ?? null;
+  }, [rendered, myLastReadAt, meId]);
+
+  // Track incoming new messages when user is scrolled up
+  const prevRenderedLength = useRef(rendered.length);
+  useEffect(() => {
+    if (rendered.length > prevRenderedLength.current) {
+      if (isScrolledUp) {
+        setNewBelowCount((c) => c + (rendered.length - prevRenderedLength.current));
+      }
+    }
+    prevRenderedLength.current = rendered.length;
+  }, [rendered.length, isScrolledUp]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlder || !hasMoreOlder) return;
+    const serverMessages = messages.data ?? [];
+    if (serverMessages.length === 0) return;
+    const oldest = serverMessages[0];
+    if (!oldest?.created_at) return;
+
+    const scroller = scrollerRef.current;
+    const previousScrollHeight = scroller ? scroller.scrollHeight : 0;
+    const previousScrollTop = scroller ? scroller.scrollTop : 0;
+
+    setLoadingOlder(true);
+    try {
+      const older = await fetchMessages({
+        data: {
+          conversation_id: conversationId,
+          before: oldest.created_at,
+          limit: 50,
+        },
+      });
+
+      if (!older || older.length === 0) {
+        setHasMoreOlder(false);
+      } else {
+        if (older.length < 50) {
+          setHasMoreOlder(false);
+        }
+        qc.setQueryData<MessageRow[]>(["messages", conversationId], (existing) => {
+          const current = existing ?? [];
+          const existingIds = new Set(current.map((m) => m.id));
+          const newOlder = older.filter((m) => !existingIds.has(m.id));
+          return [...newOlder, ...current];
+        });
+
+        requestAnimationFrame(() => {
+          if (scroller) {
+            const newScrollHeight = scroller.scrollHeight;
+            scroller.scrollTop = previousScrollTop + (newScrollHeight - previousScrollHeight);
+          }
+        });
+      }
+    } catch (err) {
+      console.error("[Ghostline] Failed to load older messages", err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [loadingOlder, hasMoreOlder, messages.data, fetchMessages, conversationId, qc]);
+
+  const handleScroll = () => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const scrolledUp = distFromBottom > 240;
+    setIsScrolledUp(scrolledUp);
+    if (!scrolledUp) {
+      setNewBelowCount(0);
+    }
+
+    if (el.scrollTop < 100 && hasMoreOlder && !loadingOlder) {
+      loadOlderMessages();
+    }
+  };
 
   useEffect(() => {
     qc.setQueryData<ConversationSummary[]>(["conversations"], (old) => {
@@ -678,17 +876,44 @@ function ChatRoom() {
   });
 
   const lastTypingAt = useRef(0);
-  const notifyTyping = useCallback(() => {
+  const notifyTyping = useCallback((typing = true) => {
     const ch = channelRef.current;
     if (!ch || !channelReady || !meId) return;
     const now = Date.now();
-    if (now - lastTypingAt.current < 1500) return;
+    if (typing && now - lastTypingAt.current < 1500) return;
     lastTypingAt.current = now;
-    ch.send({ type: "broadcast", event: "typing", payload: { user_id: meId } });
-  }, [channelReady, meId]);
+    ch.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { user_id: meId, name: myDisplayName, typing },
+    });
+  }, [channelReady, meId, myDisplayName]);
 
   const [text, setText] = useState("");
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  // ── Draft message persistence ───────────────────────────────────────────
+  const draftKey = `ghostline:draft:${conversationId}`;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (saved && !editing) {
+        setText(saved);
+      }
+    } catch {}
+  }, [conversationId, draftKey, editing]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || vanishActive || editing) return;
+    try {
+      if (text.trim()) {
+        localStorage.setItem(draftKey, text);
+      } else {
+        localStorage.removeItem(draftKey);
+      }
+    } catch {}
+  }, [text, conversationId, draftKey, vanishActive, editing]);
 
   useEffect(() => {
     if (editing) {
@@ -701,7 +926,6 @@ function ChatRoom() {
   useEffect(() => {
     if (text === "" && composerRef.current) composerRef.current.style.height = "";
   }, [text]);
-
 
   // Auto-send voice messages the moment they are staged by VoiceRecorder
   useEffect(() => {
@@ -726,6 +950,10 @@ function ChatRoom() {
       return;
     }
     setText("");
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {}
+    notifyTyping(false);
     send.mutate(body);
   };
 
@@ -792,8 +1020,17 @@ function ChatRoom() {
     }
   }, [conversationId, fetchMsgsByIds, qc]);
 
-  const stageFiles = (files: File[]) => {
-    const newStaged: StagedFile[] = files.map((file) => ({
+  const stageFiles = async (files: File[]) => {
+    const processedFiles: File[] = [];
+    for (const f of files) {
+      if (f.type.startsWith("image/")) {
+        const optimized = await optimizeImageBeforeUpload(f);
+        processedFiles.push(optimized);
+      } else {
+        processedFiles.push(f);
+      }
+    }
+    const newStaged: StagedFile[] = processedFiles.map((file) => ({
       id: crypto.randomUUID(),
       file,
       progress: 0,
@@ -947,7 +1184,6 @@ function ChatRoom() {
     scrollToMessage(searchHits[n]);
   };
 
-  const otherProfile = conv.data?.other ?? null;
   const isOnline = isUserOnline(otherId);
   const pinnedMessages = pins.data?.messages ?? [];
 
@@ -969,12 +1205,28 @@ function ChatRoom() {
   };
 
 
+  const currentTheme = (appearanceSettings?.themeId && CHAT_THEMES[appearanceSettings.themeId]) || CHAT_THEMES.default;
+  const currentWallpaper = (appearanceSettings?.wallpaperId && CHAT_WALLPAPERS[appearanceSettings.wallpaperId]) || CHAT_WALLPAPERS.plain;
+
   return (
     <div
-      className="flex flex-col overscroll-none"
+      className={[
+        "relative flex flex-col overscroll-none transition-colors",
+        currentTheme.backgroundClass,
+      ].join(" ")}
       style={{ height: `calc(100dvh - ${keyboardInset}px)` }}
       {...touchHandlers}
     >
+      {appearanceSettings?.wallpaperId !== "plain" && currentWallpaper && (
+        <div
+          className="pointer-events-none absolute inset-0 z-0 select-none transition-opacity"
+          style={{
+            backgroundImage: currentWallpaper.patternCss,
+            backgroundSize: "24px 24px",
+            opacity: appearanceSettings?.wallpaperOpacity ?? 0.05,
+          }}
+        />
+      )}
       <header className="glass sticky top-0 z-30 flex items-center gap-1 px-2 py-2.5 sm:gap-2 sm:px-3">
         <button
           onClick={() => navigate({ to: "/chats" })}
@@ -986,16 +1238,16 @@ function ChatRoom() {
         <div
           className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
           onClick={() => {
-            if (conv.data?.conversation.kind === "group") setShowGroupInfo(true);
+            if (isGroup) setShowGroupInfo(true);
             else setShowProfile(true);
           }}
         >
           <div className="relative shrink-0">
-            {conv.data?.conversation.kind === "group" ? (
-              conv.data.conversation.avatar_url ? (
+            {isGroup ? (
+              conv.data?.conversation?.avatar_url ? (
                 <img
                   src={conv.data.conversation.avatar_url}
-                  alt={conv.data.conversation.title ?? "Group"}
+                  alt={conv.data?.conversation?.title ?? "Group"}
                   className="h-10 w-10 rounded-xl object-cover ring-1 ring-border shadow-sm"
                 />
               ) : (
@@ -1016,24 +1268,24 @@ function ChatRoom() {
                 </div>
               )
             )}
-            {conv.data?.conversation.kind !== "group" && isOnline && (
+            {!isGroup && isOnline && (
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background bg-emerald-400" />
             )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-1.5 truncate text-sm font-bold">
-              {conv.data?.conversation.kind === "group" && (
+              {isGroup && (
                 <UsersRound className="h-3.5 w-3.5 shrink-0 text-primary/70" aria-hidden="true" />
               )}
               <span className="truncate">
-                {conv.data?.conversation.kind === "group"
-                  ? (conv.data.conversation.title ?? "Group chat")
+                {isGroup
+                  ? (conv.data?.conversation?.title ?? "Group chat")
                   : (otherProfile?.display_name ?? otherProfile?.username ?? "Ghost")}
               </span>
             </p>
             <p className="truncate text-[11px] text-muted-foreground">
-              {conv.data?.conversation.kind === "group" ? (
-                <span>{conv.data.members.length} member{conv.data.members.length === 1 ? "" : "s"}</span>
+              {isGroup ? (
+                <span>{(conv.data?.members ?? []).length} member{(conv.data?.members ?? []).length === 1 ? "" : "s"}</span>
               ) : (
                 <>
                   {otherProfile?.username && <span>@{otherProfile.username} · </span>}
@@ -1471,9 +1723,9 @@ function ChatRoom() {
                 )}
                 {m.is_vanish ? (
                   <EphemeralMessageBubble
-                    message={{ ...m, sender_name: conv.data?.members.find((mb) => mb.id === m.sender_id)?.display_name ?? "User" }}
+                    message={{ ...m, sender_name: conv.data?.members?.find((mb) => mb.id === m.sender_id)?.display_name ?? "User" }}
                     mine={mine}
-                    showName={conv.data?.conversation.kind === "group"}
+                    showName={isGroup}
                   />
                 ) : (
                   <MessageBubble
@@ -1498,6 +1750,9 @@ function ChatRoom() {
                     reactions={rlist}
                     parent={parent ? { id: parent.id, body: parent.body } : null}
                     attachments={m.attachments}
+                    themeClass={mine ? (CHAT_THEMES[appearanceSettings?.themeId]?.bubbleClass || CHAT_THEMES.default.bubbleClass) : undefined}
+                    onViewContact={(uid) => setViewContactUserId(uid)}
+                    onSwipeReply={(msg) => setReplyTo(msg)}
                     onImageClick={(attachmentId) => {
                       if (!m.attachments) return;
                       const idx = m.attachments.findIndex((a) => a.id === attachmentId);
@@ -1523,12 +1778,13 @@ function ChatRoom() {
               </Fragment>
             );
           })}
-          {typingOther && (
+          {typingUsers.size > 0 && (
             <li className="flex justify-start">
               <div className="glass flex items-center gap-1 rounded-2xl rounded-bl-md px-3 py-2">
                 <Dot delay="0ms" />
                 <Dot delay="150ms" />
                 <Dot delay="300ms" />
+                {typingLabel && <span className="ml-1.5 text-[11px] text-muted-foreground">{typingLabel}</span>}
               </div>
             </li>
           )}
@@ -1623,6 +1879,9 @@ function ChatRoom() {
                       onSelectFile={(file) => { stageFiles([file]); setShowAttachMenu(false); }}
                       onOpenCamera={() => { setShowCamera(true); setShowAttachMenu(false); }}
                       onStartVoice={() => { setShowVoiceRecorder(true); setShowAttachMenu(false); }}
+                      onShareContact={() => setShowContactPicker(true)}
+                      onShareLocation={() => setShowLocationPicker(true)}
+                      onOpenAppearance={() => setShowAppearanceModal(true)}
                     />
                   )}
                 </div>
@@ -1682,7 +1941,28 @@ function ChatRoom() {
                     </button>
                     {showEmojiPicker && (
                       <EmojiPickerPopover
-                        onSelect={(emoji) => { setText((prev) => prev + emoji); composerRef.current?.focus(); }}
+                        onSelectEmoji={(emoji) => {
+                          setText((prev) => prev + emoji);
+                          composerRef.current?.focus();
+                        }}
+                        onSelectSticker={async (sticker) => {
+                          await doSend({
+                            data: {
+                              conversation_id: conversationId,
+                              body: formatStickerPayload(sticker),
+                            },
+                          });
+                          qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+                        }}
+                        onSelectGif={async (gif) => {
+                          await doSend({
+                            data: {
+                              conversation_id: conversationId,
+                              body: formatGifPayload(gif),
+                            },
+                          });
+                          qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+                        }}
                         onClose={() => setShowEmojiPicker(false)}
                       />
                     )}
@@ -1715,7 +1995,11 @@ function ChatRoom() {
 
       {showCamera && (
         <CameraCaptureModal
-          onCapture={(file) => { stageFiles([file]); setShowCamera(false); }}
+          onCapture={(file, caption) => {
+            void stageFiles([file]);
+            if (caption) setAttachCaption(caption);
+            setShowCamera(false);
+          }}
           onClose={() => setShowCamera(false)}
         />
       )}
@@ -1761,6 +2045,66 @@ function ChatRoom() {
             qc.invalidateQueries({ queryKey: ["stars-in-conv", conversationId] });
             qc.invalidateQueries({ queryKey: ["starred"] });
             showToast(res.starred ? "Starred" : "Unstarred");
+          }}
+        />
+      )}
+
+      {showContactPicker && (
+        <ContactPickerModal
+          onClose={() => setShowContactPicker(false)}
+          onSendContact={async (contact) => {
+            await doSend({
+              data: {
+                conversation_id: conversationId,
+                body: formatContactPayload(contact),
+              },
+            });
+            qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+            showToast("Contact shared");
+          }}
+        />
+      )}
+
+      {showLocationPicker && (
+        <LocationPickerModal
+          onClose={() => setShowLocationPicker(false)}
+          onSendLocation={async (loc) => {
+            await doSend({
+              data: {
+                conversation_id: conversationId,
+                body: formatLocationPayload(loc),
+              },
+            });
+            qc.invalidateQueries({ queryKey: ["messages", conversationId] });
+            showToast("Location shared");
+          }}
+        />
+      )}
+
+      {showAppearanceModal && (
+        <ChatAppearanceModal
+          currentSettings={appearanceSettings}
+          onClose={() => setShowAppearanceModal(false)}
+          onSave={(newSettings) => {
+            setAppearanceSettings(newSettings);
+            saveConversationAppearance(conversationId, newSettings);
+            showToast("Appearance saved");
+          }}
+        />
+      )}
+
+      {viewContactUserId && (
+        <UserProfileSheet
+          userId={viewContactUserId}
+          onClose={() => setViewContactUserId(null)}
+          onStartCall={(kind) => {
+            setViewContactUserId(null);
+            startCall({
+              conversationId,
+              remoteUserId: viewContactUserId,
+              remoteName: "Contact",
+              isVideo: kind === "video",
+            });
           }}
         />
       )}
@@ -1812,7 +2156,7 @@ function ChatRoom() {
         />
       )}
 
-      {showGroupInfo && conv.data?.conversation.kind === "group" && (
+      {showGroupInfo && isGroup && conv.data?.conversation && (
         <GroupInfoSheet
           conversationId={conversationId}
           title={conv.data.conversation.title ?? "Group chat"}
@@ -1823,12 +2167,17 @@ function ChatRoom() {
           myRole={conv.data.my_role}
           meId={meId}
           onClose={() => setShowGroupInfo(false)}
+          onOpenMedia={(id, allMedia) => {
+            const idx = allMedia.findIndex((a) => a.id === id);
+            setMediaViewer({ attachments: allMedia, index: Math.max(0, idx) });
+          }}
         />
       )}
 
       {showProfile && conv.data?.other && (
         <UserProfileSheet
           user={conv.data.other}
+          conversationId={conversationId}
           isOnline={isOnline}
           statusLabel={getUserStatusLabel(otherId, conversationId, otherProfile?.last_seen)}
           isMuted={isMuted}
@@ -1843,6 +2192,10 @@ function ChatRoom() {
           onToggleMute={handleToggleMute}
           onClearChat={() => setConfirmAction("clear")}
           onBlock={() => setConfirmAction("block")}
+          onOpenMedia={(id, allMedia) => {
+            const idx = allMedia.findIndex((a) => a.id === id);
+            setMediaViewer({ attachments: allMedia, index: Math.max(0, idx) });
+          }}
         />
       )}
 
@@ -1886,7 +2239,10 @@ function ChatRoom() {
 
       {mediaViewer && (
         <MediaViewerModal
-          attachments={messageById.get(mediaViewer.messageId)?.attachments ?? []}
+          attachments={
+            mediaViewer.attachments ??
+            (mediaViewer.messageId ? messageById.get(mediaViewer.messageId)?.attachments ?? [] : [])
+          }
           startIndex={mediaViewer.index}
           onClose={() => setMediaViewer(null)}
           onRequestUrl={async (id) => {
@@ -1915,6 +2271,7 @@ function ContextMenu({
   onPin,
   onStar,
   onShowToast,
+  onTranslate,
 }: {
   menu: NonNullable<MenuState>;
   isPinned: boolean;
@@ -1931,6 +2288,7 @@ function ContextMenu({
   onInfo: () => void;
   onPin: () => void;
   onStar: () => void;
+  onTranslate?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
@@ -1961,8 +2319,9 @@ function ContextMenu({
 
   const attachments = menu.msg.attachments ?? [];
   const firstImage = attachments.find((a) => a.mime_type.startsWith("image/"));
+  const firstVideo = attachments.find((a) => a.mime_type.startsWith("video/"));
   const firstAudio = attachments.find((a) => a.mime_type.startsWith("audio/"));
-  const firstFile = attachments.find((a) => !a.mime_type.startsWith("image/") && !a.mime_type.startsWith("audio/"));
+  const firstFile = attachments.find((a) => !a.mime_type.startsWith("image/") && !a.mime_type.startsWith("video/") && !a.mime_type.startsWith("audio/"));
 
   const handleSaveMedia = async (att: { id: string; original_filename: string }) => {
     try {
@@ -2039,6 +2398,9 @@ function ContextMenu({
             <Item icon={Download} label="Save image" onClick={() => void handleSaveMedia(firstImage)} />
             <Item icon={Copy} label="Copy image" onClick={() => void handleCopyImage(firstImage.id)} />
           </>
+        )}
+        {firstVideo && (
+          <Item icon={Download} label="Save video" onClick={() => void handleSaveMedia(firstVideo)} />
         )}
         {firstAudio && (
           <Item icon={Download} label="Save audio" onClick={() => void handleSaveMedia(firstAudio)} />
